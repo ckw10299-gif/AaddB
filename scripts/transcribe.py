@@ -20,7 +20,7 @@ def main():
             for line in Path(args.glossary).read_text(encoding="utf-8-sig").splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         ]
-    hotwords = ",".join(terms)
+    hotwords = "，".join(terms)
     model = WhisperModel(args.model, device="cpu", compute_type="int8")
     iterator, info = model.transcribe(
         args.input,
@@ -33,8 +33,8 @@ def main():
         word_timestamps=True,
         hotwords=hotwords or None,
         initial_prompt=(
-            f"???????????????:{hotwords}??????????,???????"
-            if hotwords else "????????????????????,???????"
+            f"真人游戏广告中文对白。专有名词：{hotwords}。完整转写每一句对白，不要省略短句。"
+            if hotwords else "真人游戏广告中文对白。完整转写每一句对白，不要省略短句。"
         ),
     )
     segments = []
