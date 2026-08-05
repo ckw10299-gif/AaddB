@@ -6,15 +6,15 @@ Expected source layout:
 
 ```text
 root/
-??? A?/
-??? B?/
-?   ??? ??/
-?   ??? ??/
-??? bgm/                 # optional
-??? ?????.txt        # one term per line
-??? ??/
-    ??? ??/
-    ??? ??/
+├── A面/
+├── B面/
+│   ├── 体验/
+│   └── 预约/
+├── bgm/                 # optional
+├── 专有名词库.txt        # one term per line
+└── 成品/
+    ├── 体验/
+    └── 预约/
 ```
 
 Output category follows the B library. Do not add horizontal/vertical subfolders.
@@ -33,7 +33,7 @@ For every A, pair it with every unique B in the same orientation and category. E
 horizontal_A * horizontal_B + vertical_A * vertical_B
 ```
 
-Compute the formula separately for `??` and `??`. Hash B files and skip exact duplicates.
+Compute the formula separately for `体验` and `预约`. Hash B files and skip exact duplicates.
 
 ## Subtitle recognition and validation
 
@@ -52,11 +52,11 @@ For every A:
 Maintain a glossary, including discovered terms such as:
 
 ```text
-?????
-??
-???
-??
-????
+闪耀吧噜咪
+噜咪
+坤坤鸡
+青龙
+彩色噜咪
 ```
 
 ### Subtitle styles
@@ -66,14 +66,14 @@ Main subtitle:
 - white bold Microsoft YaHei or equivalent;
 - black outline and subtle shadow;
 - horizontally centered;
-- around 65-70% of frame height;
+- around 65–70% of frame height;
 - vertical reference: about 90 px at 1080x1920;
 - horizontal reference: about 56 px at 1920x1080.
 
 A-side disclaimer, visible for the entire A contribution:
 
 ```text
-????????,????????
+广告创意仅供参考，实际以游戏内为准
 ```
 
 Place it in the lower-right safe area as small, low-emphasis white text.
@@ -105,29 +105,29 @@ A requester is normally a suffix such as `-ckw` in the A filename. If missing, r
 Example B filename:
 
 ```text
-G36-V1560-1080x1920-20260724-cwt-??;ae;????;????;????.mp4
+G36-V1560-1080x1920-20260724-cwt-冠众;ae;公平竞技;阵容搭配;冰雪阵容.mp4
 ```
 
 Parse:
 
 - B sequence: `V1560`.
 - B requester: `cwt`, the field after the date.
-- B name: only the final semicolon-delimited label, `????`.
+- B name: only the final semicolon-delimited label, `冰雪阵容`.
 - Ignore project code, resolution, date, and earlier tags in the output name.
 
 Output format:
 
 ```text
-A???+B???+B??B??.mp4
+A请求方+B请求方+B序号B名称.mp4
 ```
 
 Example:
 
 ```text
-ckw+cwt+V1560????.mp4
+ckw+cwt+V1560冰雪阵容.mp4
 ```
 
-Do not put `+` between sequence and B name. If horizontal and vertical outputs collide in the same category, append `??` or `??` only to the colliding names.
+Do not put `+` between sequence and B name. If horizontal and vertical outputs collide in the same category, append `横版` or `竖版` only to the colliding names.
 
 ## Final QA
 
