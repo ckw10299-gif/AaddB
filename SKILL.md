@@ -1,6 +1,6 @@
 ---
 name: aaddb
-description: Batch-process A-side and B-side advertising videos with verified Chinese subtitles, glossary correction, matching landscape/portrait dimensions, Cartesian-product pairing across experience and reservation B libraries, classified outputs, deterministic naming, audible push-in edge-blur transitions, and final media QA. Use when Codex needs to create or repair A+B mixed videos, process A/B video libraries, add A-side subtitles and disclaimers, classify ??/?? outputs, or enforce the AaddB naming and transition rules.
+description: Batch-process A-side and B-side advertising videos with verified Chinese subtitles, glossary correction, matching landscape/portrait dimensions, Cartesian-product pairing across experience and reservation B libraries, classified outputs, deterministic naming, audible push-in edge-blur transitions, and final media QA. Use when Codex needs to create or repair A+B mixed videos, process A/B video libraries, add A-side subtitles and disclaimers, classify 体验/预约 outputs, or enforce the AaddB naming and transition rules.
 ---
 
 # AaddB
@@ -16,7 +16,7 @@ Create all valid A+B combinations while preserving orientation, dialogue, audio,
 5. Transcribe every horizontal and vertical A independently with `scripts/transcribe.py`.
 6. Inspect word timestamps and confidence. Re-run unclear audio regions; never guess or copy timing between orientations.
 7. Build separate ASS subtitles for each A/orientation using the required styles and disclaimer.
-8. Form the Cartesian product of each A with every B in the same orientation, separately for `??` and `??`.
+8. Form the Cartesian product of each A with every B in the same orientation, separately for `体验` and `预约`.
 9. Render each pair with `scripts/render_transition.py`.
 10. Verify counts, dimensions, FPS, audio tracks, subtitle events, transition frames, and filenames before reporting completion.
 
@@ -24,7 +24,7 @@ Create all valid A+B combinations while preserving orientation, dialogue, audio,
 
 - Match horizontal A only to horizontal B; output `1920x1080`.
 - Match vertical A only to vertical B; output `1080x1920`.
-- Keep `??/??` and `??/??`; mix orientations inside each folder.
+- Keep `成品/体验` and `成品/预约`; mix orientations inside each folder.
 - Preserve the A-side final dialogue completely.
 - Start the visual transition when the final spoken word begins; keep the A audio intact.
 - Bring in B audio during the transition; do not create silence.
