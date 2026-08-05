@@ -45,7 +45,7 @@ def parse_b(path):
     sequence = re.search(r"(?:^|-)V(\d+)(?:-|$)", stem, re.I)
     requester = re.search(r"-\d{8}-([^-]+)-", stem)
     name = stem.split(";")[-1].strip()
-    name = re.sub(r"\s*-\s*??$", "", name).strip()
+    name = re.sub(r"\s*-\s*副本$", "", name).strip()
     return {
         "sequence": f"V{sequence.group(1)}" if sequence else None,
         "requester": requester.group(1) if requester else None,
@@ -62,11 +62,11 @@ def main():
     records = []
     seen_b = {}
     for path in root.rglob("*"):
-        if not path.is_file() or path.suffix.lower() not in VIDEO_EXTS or "??" in path.parts:
+        if not path.is_file() or path.suffix.lower() not in VIDEO_EXTS or "成品" in path.parts:
             continue
         meta = probe(path)
-        role = "A" if "A?" in path.parts else "B" if "B?" in path.parts else "unknown"
-        category = "??" if "??" in path.parts else "??" if "??" in path.parts else None
+        role = "A" if "A面" in path.parts else "B" if "B面" in path.parts else "unknown"
+        category = "体验" if "体验" in path.parts else "预约" if "预约" in path.parts else None
         item = {"path": str(path), "role": role, "category": category, **meta}
         item["orientation"] = orientation(meta)
         if role == "B":
@@ -79,7 +79,7 @@ def main():
     unique_b = [record for record in records if record["role"] == "B" and not record.get("duplicate_of")]
     a_files = [record for record in records if record["role"] == "A"]
     counts = {}
-    for category in ("??", "??"):
+    for category in ("体验", "预约"):
         counts[category] = sum(
             1 for a in a_files for b in unique_b
             if b["category"] == category and a["orientation"] == b["orientation"]
