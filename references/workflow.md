@@ -118,16 +118,16 @@ Parse:
 Output format:
 
 ```text
-A请求方+B请求方+B序号B名称.mp4
+A请求方+B请求方+A名称+B序号+B名称.mp4
 ```
 
 Example:
 
 ```text
-ckw+cwt+V1560冰雪阵容.mp4
+ckw+cwt+插队鉴定 真人+V1560+冰雪阵容.mp4
 ```
 
-Do not put `+` between sequence and B name. If horizontal and vertical outputs collide in the same category, append `横版` or `竖版` only to the colliding names.
+Remove orientation and requester suffixes from the A source stem when deriving A name. Put `+` between every field. If horizontal and vertical outputs collide in the same category, append `横版` or `竖版` only to the colliding names.
 
 ## Final QA
 
