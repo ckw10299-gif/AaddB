@@ -72,8 +72,9 @@ def main():
         if role == "B":
             item.update(parse_b(path))
             item["sha256"] = sha256(path)
-            item["duplicate_of"] = seen_b.get(item["sha256"])
-            seen_b.setdefault(item["sha256"], str(path))
+            dedupe_key = (category, item["sha256"])
+            item["duplicate_of"] = seen_b.get(dedupe_key)
+            seen_b.setdefault(dedupe_key, str(path))
         records.append(item)
 
     unique_b = [record for record in records if record["role"] == "B" and not record.get("duplicate_of")]
