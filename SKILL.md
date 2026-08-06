@@ -9,16 +9,11 @@ Create all valid A+B combinations while preserving orientation, dialogue, audio,
 
 ## Workflow
 
-1. Inventory the source tree with `scripts/inventory.py` and `ffprobe`.
-2. Classify by actual dimensions first; use filename labels only as hints.
-3. Deduplicate B files by SHA-256 before forming combinations.
-4. Read `references/workflow.md` before transcribing or rendering.
-5. Transcribe every horizontal and vertical A independently with `scripts/transcribe.py`.
-6. Inspect word timestamps and confidence. Re-run unclear audio regions; never guess or copy timing between orientations.
-7. Build separate ASS subtitles for each A/orientation using the required styles and disclaimer.
-8. Form the Cartesian product of each A with every B in the same orientation, separately for `体验` and `预约`.
-9. Render each pair with `scripts/render_transition.py`.
-10. Verify counts, dimensions, FPS, audio tracks, subtitle events, transition frames, and filenames before reporting completion.
+1. Read `references/workflow.md`.
+2. Run `scripts/batch.py ROOT --a-requester NAME --phase prepare`.
+3. Review every generated `-字幕预览.mp4`. Correct its transcript JSON and rerun `prepare` until text and timing pass.
+4. Run `scripts/batch.py ROOT --a-requester NAME --phase render --approve-subtitles` only after explicit subtitle approval.
+5. Inspect the generated QA report and spot-check transition frames and audio before reporting completion.
 
 ## Hard rules
 
@@ -32,10 +27,14 @@ Create all valid A+B combinations while preserving orientation, dialogue, audio,
 - Use a push-in transition with center-relative clarity and increasing edge blur.
 - Do not burn or batch-render subtitles until the A-only subtitle preview passes QA.
 - Never claim audio timing is verified when it was inferred from visuals or another edit.
+- Name outputs as `A需求方+B需求方+A名称+B序号+B名称.mp4`, with `+` between every field.
 
 ## Bundled resources
 
 - `references/workflow.md`: detailed directory, parsing, subtitle, naming, transition, and QA rules.
 - `scripts/inventory.py`: scan, probe, deduplicate, classify, and predict combinations.
 - `scripts/transcribe.py`: high-accuracy local Whisper transcription with word timestamps and glossary hotwords.
+- `scripts/generate_ass.py`: generate orientation-specific ASS subtitles and the persistent A-side disclaimer.
 - `scripts/render_transition.py`: render one verified A+B pair with the approved audible push-in edge-blur transition.
+- `scripts/batch.py`: run inventory, transcription, preview, approved Cartesian-product rendering, naming, and QA.
+- `scripts/qa.py`: validate output count, filenames, dimensions, FPS, and audio tracks.
