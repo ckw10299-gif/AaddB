@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 from pathlib import Path
 
 
@@ -8,33 +9,40 @@ DISCLAIMER = "广告创意仅供参考，实际以游戏内为准"
 
 def ass_time(seconds):
     seconds = max(0.0, float(seconds))
-    hours = int(seconds // 3600)
-    minutes = int(seconds % 3600 // 60)
-    secs = seconds % 60
-    return f"{hours}:{minutes:02d}:{secs:05.2f}"
+    return f"{int(seconds // 3600)}:{int(seconds % 3600 // 60):02d}:{seconds % 60:05.2f}"
 
 
 def clean_text(text):
-    return str(text).replace("\n", "\\N").replace("{", "（").replace("}", "）").strip()
+    text = str(text).replace("\n", " ").replace("?", "？")
+    return re.sub(r"[^\w\u4e00-\u9fff？]", "", text, flags=re.UNICODE).strip()
 
 
-def load_events(path):
-    data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
-    events = []
+def events(data, max_chars=14, max_duration=2.8):
+    result = []
     for segment in data.get("segments", []):
-        text = clean_text(segment.get("text", ""))
-        if not text:
+        words = [w for w in (segment.get("words") or []) if w.get("word") and w.get("start") is not None and w.get("end") is not None]
+        if not words:
+            text = clean_text(segment.get("text", ""))
+            if text:
+                result.append((float(segment["start"]), float(segment["end"]), text))
             continue
-        start = float(segment["start"])
-        end = max(start + 0.08, float(segment["end"]))
-        events.append((start, end, text))
-    if not events:
-        raise ValueError("转写 JSON 中没有可用字幕事件")
-    return data, events
+        group = []
+        for word in words:
+            if group and float(word["start"]) - float(group[-1]["end"]) > 0.45:
+                result.append((float(group[0]["start"]), float(group[-1]["end"]), clean_text("".join(x["word"] for x in group))))
+                group = []
+            group.append(word)
+            text = clean_text("".join(x["word"] for x in group))
+            if len(text) >= max_chars or float(group[-1]["end"]) - float(group[0]["start"]) >= max_duration or text.endswith("？"):
+                result.append((float(group[0]["start"]), float(group[-1]["end"]), text))
+                group = []
+        if group:
+            result.append((float(group[0]["start"]), float(group[-1]["end"]), clean_text("".join(x["word"] for x in group))))
+    return [item for item in result if item[2]]
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate reviewed A-side ASS subtitles")
+    parser = argparse.ArgumentParser(description="Generate reviewed ASS subtitles for A-side")
     parser.add_argument("transcript_json")
     parser.add_argument("output_ass")
     parser.add_argument("--orientation", choices=("vertical", "horizontal"), required=True)
@@ -43,37 +51,32 @@ def main():
     parser.add_argument("--disclaimer", default=DISCLAIMER)
     args = parser.parse_args()
 
-    _, events = load_events(args.transcript_json)
-    if args.orientation == "vertical":
-        width, height, font_size, margin_v, note_size = 1080, 1920, 90, 610, 25
-        note_right, note_bottom = 24, 18
-    else:
-        width, height, font_size, margin_v, note_size = 1920, 1080, 56, 330, 18
-        note_right, note_bottom = 32, 20
+    data = json.loads(Path(args.transcript_json).read_text(encoding="utf-8-sig"))
+    subtitle_events = events(data)
+    if not subtitle_events:
+        raise ValueError("Transcript contains no usable subtitle events")
 
+    if args.orientation == "vertical":
+        width, height, font_size, margin_v, note_size = 1080, 1920, 68, 290, 24
+    else:
+        width, height, font_size, margin_v, note_size = 1920, 1080, 54, 135, 20
     header = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {width}
 PlayResY: {height}
-ScaledBorderAndShadow: yes
-WrapStyle: 0
 
 [V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Main,{args.font},{font_size},&H00FFFFFF,&H000000FF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,4,2,2,40,40,{margin_v},1
-Style: Disclaimer,{args.font},{note_size},&HCCFFFFFF,&H000000FF,&H99000000,&H00000000,0,0,0,0,100,100,0,0,1,1,0,3,10,{note_right},{note_bottom},1
+Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
+Style: Subtitle,{args.font},{font_size},&H00FFFFFF,&H000000FF,&H00151515,&H50000000,-1,0,0,0,100,100,0,0,1,3,1,2,55,55,{margin_v},1
+Style: Disclaimer,{args.font},{note_size},&H00FFFFFF,&H000000FF,&H00151515,&H50000000,0,0,0,0,100,100,0,0,1,1,0,3,20,24,18,1
 
 [Events]
-Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
 """
     lines = [header]
-    for start, end, text in events:
-        lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},Main,,0,0,0,,{text}\n")
-    if args.disclaimer:
-        lines.append(
-            f"Dialogue: 1,{ass_time(0)},{ass_time(args.a_duration)},Disclaimer,,0,0,0,,{clean_text(args.disclaimer)}\n"
-        )
-    Path(args.output_ass).parent.mkdir(parents=True, exist_ok=True)
+    for start, end, text in subtitle_events:
+        lines.append(f"Dialogue: 0,{ass_time(start)},{ass_time(max(end, start + 0.08))},Subtitle,,0,0,0,,{text}\n")
+    lines.append(f"Dialogue: 1,0:00:00.00,{ass_time(args.a_duration)},Disclaimer,,0,0,0,,{args.disclaimer}\n")
     Path(args.output_ass).write_text("".join(lines), encoding="utf-8-sig")
 
 

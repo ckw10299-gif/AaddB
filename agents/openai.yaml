@@ -1,4 +1,4 @@
 interface:
   display_name: "AaddB"
-  short_description: "批量完成横竖版A+B字幕、转场、分类、命名与完整质检"
-  default_prompt: "Use $aaddb to batch-process A+B videos with verified subtitles and matched orientations."
+  short_description: "完整执行A+B+C匹配、双推进转场、尾板替换与批量质检"
+  default_prompt: "Use $aaddb to match and produce an approved A+B+C video batch."

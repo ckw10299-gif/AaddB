@@ -6,7 +6,7 @@ from faster_whisper import WhisperModel
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Transcribe A-side Chinese speech with word timestamps")
     parser.add_argument("input")
     parser.add_argument("output_json")
     parser.add_argument("--glossary")
@@ -16,11 +16,14 @@ def main():
     terms = []
     if args.glossary:
         terms = [
-            line.strip()
-            for line in Path(args.glossary).read_text(encoding="utf-8-sig").splitlines()
+            line.strip() for line in Path(args.glossary).read_text(encoding="utf-8-sig").splitlines()
             if line.strip() and not line.lstrip().startswith("#")
         ]
     hotwords = "，".join(terms)
+    prompt = "游戏广告中文对白，完整转写每一句，不要省略短句"
+    if hotwords:
+        prompt += f"。专有名词：{hotwords}"
+
     model = WhisperModel(args.model, device="cpu", compute_type="int8")
     iterator, info = model.transcribe(
         args.input,
@@ -32,10 +35,7 @@ def main():
         condition_on_previous_text=True,
         word_timestamps=True,
         hotwords=hotwords or None,
-        initial_prompt=(
-            f"真人游戏广告中文对白。专有名词：{hotwords}。完整转写每一句对白，不要省略短句。"
-            if hotwords else "真人游戏广告中文对白。完整转写每一句对白，不要省略短句。"
-        ),
+        initial_prompt=prompt,
     )
     segments = []
     for segment in iterator:
@@ -46,12 +46,7 @@ def main():
             "avg_logprob": segment.avg_logprob,
             "no_speech_prob": segment.no_speech_prob,
             "words": [
-                {
-                    "start": word.start,
-                    "end": word.end,
-                    "word": word.word.strip(),
-                    "probability": word.probability,
-                }
+                {"start": word.start, "end": word.end, "word": word.word.strip(), "probability": word.probability}
                 for word in (segment.words or []) if word.word.strip()
             ],
         })

@@ -1,40 +1,84 @@
 ---
 name: aaddb
-description: Batch-process A-side and B-side advertising videos with verified Chinese subtitles, glossary correction, matching landscape/portrait dimensions, Cartesian-product pairing across experience and reservation B libraries, classified outputs, deterministic naming, audible push-in edge-blur transitions, and final media QA. Use when Codex needs to create or repair A+B mixed videos, process A/B video libraries, add A-side subtitles and disclaimers, classify 体验/预约 outputs, or enforce the AaddB naming and transition rules.
+description: 完整执行游戏买量视频的 A+B+C 工作流：读取或建立本地 A/B 信息缓存，以 A 为维度匹配 B，处理 A 面字幕与 BGM，逐条裁掉 B 面原尾板，使用已验收的推近加四周轻微模糊转场连接 A→B 和 B→新尾板，生成预约/体验、横竖版及包框版本，并完成命名和技术质检。用户提到 A+B、A+B+C、A面接B面、替换尾板、批量混剪、包框、预约/体验或要求使用 AaddB 时使用。
 ---
 
 # AaddB
 
-Create all valid A+B combinations while preserving orientation, dialogue, audio, naming, and output structure.
+严格按“准备与确认 → 样片验收 → 批量产出 → 质检”执行。禁止跳过样片确认直接批量。
 
-## Workflow
+## 1. 建立输入与缓存
 
-1. Read `references/workflow.md`.
-2. Run `scripts/batch.py ROOT --a-requester NAME --phase prepare`.
-3. Review every generated `-字幕预览.mp4`. Correct its transcript JSON and rerun `prepare` until text and timing pass.
-4. Run `scripts/batch.py ROOT --a-requester NAME --phase render --approve-subtitles` only after explicit subtitle approval.
-5. Inspect the generated QA report and spot-check transition frames and audio before reporting completion.
+- 需要表格结构时，复制 `assets/AaddB-empty-workbook-template.xlsx`。模板仅含 A面表、B面表、匹配确认表的格式和字段，不包含线上文档地址或业务数据。
+- 用户另行提供在线表格时，首次读取后把关键字段和完整快照保存到本地缓存；未明确有新增内容时优先读缓存，不重复读取整表。
+- B 面首次入库时运行 `scripts/analyze_b_library.py`，保存技术信息和六帧联系表。后续优先复用缓存，不重复抽帧。
+- 不根据缺失信息编造剧情、角色、噜咪种类或卖点。只写素材、文件名、表格或抽帧能直接支持的事实。
 
-## Hard rules
+## 2. 匹配并等待确认
 
-- Match horizontal A only to horizontal B; output `1920x1080`.
-- Match vertical A only to vertical B; output `1080x1920`.
-- Keep `成品/体验` and `成品/预约`; mix orientations inside each folder.
-- Preserve the A-side final dialogue completely.
-- Start the visual transition when the final spoken word begins; keep the A audio intact.
-- Bring in B audio during the transition; do not create silence.
-- Never freeze-copy the A tail to host a transition.
-- Use a push-in transition with center-relative clarity and increasing edge blur.
-- Do not burn or batch-render subtitles until the A-only subtitle preview passes QA.
-- Never claim audio timing is verified when it was inferred from visuals or another edit.
-- Name outputs as `A需求方+B需求方+A名称+B序号+B名称.mp4`, with `+` between every field.
+- 以每个 A 为维度，按内容、元素、情绪、卖点和衔接动作筛选同画幅 B。
+- 每个 A 默认列出至少 5 个 B 候选；说明匹配理由，不逐字读取全部 B 视频。
+- 把候选写入“匹配确认表”，等待用户确认 B 序号后再剪辑。
 
-## Bundled resources
+## 3. 处理 A 面
 
-- `references/workflow.md`: detailed directory, parsing, subtitle, naming, transition, and QA rules.
-- `scripts/inventory.py`: scan, probe, deduplicate, classify, and predict combinations.
-- `scripts/transcribe.py`: high-accuracy local Whisper transcription with word timestamps and glossary hotwords.
-- `scripts/generate_ass.py`: generate orientation-specific ASS subtitles and the persistent A-side disclaimer.
-- `scripts/render_transition.py`: render one verified A+B pair with the approved audible push-in edge-blur transition.
-- `scripts/batch.py`: run inventory, transcription, preview, approved Cartesian-product rendering, naming, and QA.
-- `scripts/qa.py`: validate output count, filenames, dimensions, FPS, and audio tracks.
+1. 用 `scripts/transcribe.py` 从音频生成带词级时间戳的 JSON；加载专业术语表。
+2. 人工核对转写，尤其检查短句、句首“我”、专有名词和被漏掉的整句。不得仅凭画面猜字幕时间。
+3. 用 `scripts/generate_ass.py` 生成烧录字幕：位于画面下方；仅保留问号，删除逗号、句号、感叹号等其他标点。
+4. A 面右下角持续显示白色小字：`广告创意仅供参考，实际以游戏内为准`。
+5. 有 BGM 时仅叠在 A 面，约 50% 音量，不能压过配音，并在 A 面结尾淡出；无 BGM 时不强加。
+
+## 4. 精确选择 A→B 转场点
+
+这是硬性验收规则：
+
+- 分别分析横版和竖版音频，禁止把一个画幅的时间点套到另一个画幅。
+- 转场开始时间必须是 A 面最后一句“最后一个有效口播字”的开始时间；最多只允许剩最后一个字时起转，绝不能提前一整句或多个字。
+- 例如最后一句为“我一定会回来的”，应从最后一个“的”的词级 `start` 起转，而不是从整句开始。
+- A 面画面在转场期间继续运动，禁止截帧、定格或用静止尾帧补时。
+- A 面原声保留到真实音频结束；转场开始不等于切断 A 面声音。
+- 若结尾是尖叫、呼吸或音效而非口播，先定位最后一个有效口播字，再结合试听决定非口播尾音是否保留；不得让模型幻觉词决定切点。
+- 记录每个 A、每个画幅的已确认切点，批量时复用。
+
+## 5. 每条 B 必须先删除旧尾板
+
+- 默认每条 B 都带旧尾板。逐条查看尾部、结合场景切换定位旧尾板第一帧。
+- 同时裁掉旧尾板的视频和音频，把准确秒数写入本地 `tailboard_cuts.json`。
+- 禁止在未裁旧尾板的 B 后直接追加新尾板。
+- 不修改 B 原视频，只在渲染成片时 `trim/atrim`。
+
+## 6. 两处转场使用同一已验收效果
+
+运行 `scripts/render_abc_batch.py`：
+
+- A→B 和 B→C 都使用 FFmpeg `xfade=transition=zoomin`。
+- 默认持续 `0.4秒`。
+- 在转场区叠加径向可变模糊：中心清晰、四周轻微模糊，默认 `varblur max_r=14`。
+- 两段声音在转场期间重叠保留；B 和新尾板各自轻微淡入，B 在进入新尾板前轻微淡出。
+- B→C 的转场从“旧尾板裁切点前 0.4 秒”开始，因此呈现 B 正常内容推近到新尾板。
+- 样片的两个转场都通过用户确认后，才允许扩展到其他 B、画幅和版本。
+
+## 7. 画幅、版本和包框
+
+- 原生只允许横 A＋横 B＋横尾板，或竖 A＋竖 B＋竖尾板。
+- 横版输出 `1920×1080`；竖版输出 `1080×1920`；统一 30fps、H.264、AAC。
+- 每个原生 A+B+C 同时产出预约和体验版本。
+- 每个原生版本再做一个相反画幅包框版：竖视频置于横包框空位；横视频置于竖包框空位；不得遮挡包框内容。
+- 预约、体验分别放入批次目录下对应文件夹。
+
+## 8. 命名
+
+使用：`A面名字+B面序号+B面名字+横/竖.mp4`。
+
+包框版在画幅后加 `包框`，例如：`A面名字+V1106+B面名字+竖包框.mp4`。
+
+B 面名称只取文件名分号后的最后一段；前面的类型、元素和标签不算名称。
+
+## 9. 质检
+
+- 批量前：只做 1 条完整样片，检查 A→B、B→C、字幕、音频和尾板。
+- 批量后运行 `scripts/qa.py`，检查数量、分辨率、30fps、音轨、命名和可播放性。
+- 每个画幅至少抽检一条 A→B 和一条 B→C 的连续帧；确认没有白屏/色块、静止 A、旧尾板或过早切镜。
+- 用户未验收样片时，不覆盖全部成片。
+
+详细字段、目录建议和命令示例见 `references/workflow.md`。

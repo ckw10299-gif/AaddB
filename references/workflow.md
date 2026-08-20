@@ -1,143 +1,64 @@
-# AaddB workflow reference
+# AaddB 执行参考
 
-## Directory contract
-
-Expected source layout:
+## 推荐目录
 
 ```text
-root/
-├── A面/
-├── B面/
-│   ├── 体验/
-│   └── 预约/
-├── bgm/                 # optional
-├── 专有名词库.txt        # one term per line
-└── 成品/
-    ├── 体验/
-    └── 预约/
+固定物料/
+  B面原视频/
+  尾板/
+  包框/
+待处理物料/<批次>/
+产出物料/
+  .aaddb-cache/
+  <批次>/
+    预约/
+    体验/
 ```
 
-Output category follows the B library. Do not add horizontal/vertical subfolders.
+## 表格字段
 
-## Orientation and Cartesian product
+- A面表：A面编号、A面名称、A面需求方、类型、画幅、核心元素、内容概述、钩子、结尾台词、素材文件名、状态、备注。
+- B面表：B面序号、B面名称、B面需求方、类型、画幅、核心元素、内容概述、开头画面或台词、衔接标签、原尾板起点、素材文件名、状态、备注。
+- 匹配确认表：批次、A面名称、A面画幅、B面序号、B面名称、B面画幅、匹配理由、衔接评分、版本、用户确认、备注。
 
-Use probed dimensions as authority:
+## 切点数据
 
-- width > height: horizontal; normalize to `1920x1080`.
-- height > width: vertical; normalize to `1080x1920`.
-- reject square or ambiguous media for manual review.
-
-For every A, pair it with every unique B in the same orientation and category. Expected count:
-
-```text
-horizontal_A * horizontal_B + vertical_A * vertical_B
+```json
+{
+  "V1106": {
+    "horizontal": 40.7,
+    "vertical": 40.7,
+    "verified": true
+  }
+}
 ```
 
-Compute the formula separately for `体验` and `预约`. Hash B files and skip exact duplicates.
+不要假设同一序号横竖切点一定一致；分别核验后记录。
 
-## Subtitle recognition and validation
+## 批量渲染命令
 
-Use `large-v3-turbo` or a comparably accurate multilingual model, word timestamps, Chinese language, glossary hotwords, and no timing reuse between horizontal and vertical edits.
-
-For every A:
-
-1. Transcribe the full audio independently.
-2. Inspect every word timestamp and probability.
-3. Flag gaps longer than 1.5 seconds between dialogue events when visible speaking or strong vocal energy exists.
-4. Re-transcribe suspicious time windows as isolated, normalized mono clips.
-5. Treat low-confidence domain words as glossary candidates; correct text only when the intended term is supported.
-6. Never invent a cue time. If recognition is unresolved, stop before rendering and report the exact interval.
-7. Render an A-only preview and inspect frames at the midpoint of every subtitle event.
-
-Maintain a glossary, including discovered terms such as:
-
-```text
-闪耀吧噜咪
-噜咪
-坤坤鸡
-青龙
-彩色噜咪
+```powershell
+python scripts/render_abc_batch.py `
+  "D:\库\待处理物料\批次" `
+  "D:\库\固定物料\B面原视频" `
+  "D:\库\固定物料" `
+  "D:\库\产出物料\批次" `
+  --a-name "A面名字" `
+  --codes 1106 1388 `
+  --a-offset-horizontal 10.28 `
+  --a-offset-vertical 7.96 `
+  --b-cut 1106=40.700 `
+  --b-cut 1388=30.267
 ```
 
-### Subtitle styles
+上述秒数仅为命令格式示例，不能套用到新素材。新 A 必须重新根据词级时间戳和试听确定横竖切点；新 B 必须重新定位旧尾板。
 
-Main subtitle:
+## 失败即停止
 
-- white bold Microsoft YaHei or equivalent;
-- black outline and subtle shadow;
-- horizontally centered;
-- around 65–70% of frame height;
-- vertical reference: about 90 px at 1080x1920;
-- horizontal reference: about 56 px at 1920x1080.
+- 没有词级时间戳或无法确认最后一个口播字。
+- B 旧尾板起点未确认。
+- 横竖素材缺失或分辨率冲突。
+- 尾板/包框与目标画幅不匹配。
+- 样片两处转场尚未得到用户确认。
 
-A-side disclaimer, visible for the entire A contribution:
-
-```text
-广告创意仅供参考，实际以游戏内为准
-```
-
-Place it in the lower-right safe area as small, low-emphasis white text.
-
-## Transition and audio
-
-Do not extend A with a cloned still frame. Determine `transition_offset` from the start of the final spoken word for each A edit independently.
-
-Approved visual:
-
-- about 0.4 seconds;
-- `xfade=zoomin`;
-- variable blur driven by a radial mask: center near zero blur, edges up to roughly radius 14;
-- apply variable blur only to the transition slice for performance;
-- inspect continuous frames for black frames, freezes, subtitle ghosting, and global double images.
-
-Approved audio:
-
-- retain the complete A audio at normal level;
-- start B audio at the visual transition offset;
-- fade B audio in over the transition while mixing with intact A audio;
-- never insert silence;
-- keep B audio aligned with B video after the transition.
-
-## Filename parsing and output naming
-
-A requester is normally a suffix such as `-ckw` in the A filename. If missing, require the user to provide it.
-
-Example B filename:
-
-```text
-G36-V1560-1080x1920-20260724-cwt-冠众;ae;公平竞技;阵容搭配;冰雪阵容.mp4
-```
-
-Parse:
-
-- B sequence: `V1560`.
-- B requester: `cwt`, the field after the date.
-- B name: only the final semicolon-delimited label, `冰雪阵容`.
-- Ignore project code, resolution, date, and earlier tags in the output name.
-
-Output format:
-
-```text
-A请求方+B请求方+A名称+B序号+B名称.mp4
-```
-
-Example:
-
-```text
-ckw+cwt+插队鉴定 真人+V1560+冰雪阵容.mp4
-```
-
-Remove orientation and requester suffixes from the A source stem when deriving A name. Put `+` between every field. If horizontal and vertical outputs collide in the same category, append `横版` or `竖版` only to the colliding names.
-
-## Final QA
-
-- Count equals the deduplicated Cartesian-product prediction.
-- Experience and reservation counts match their respective B libraries.
-- Horizontal outputs are `1920x1080`; vertical outputs are `1080x1920`.
-- Video is H.264, 30 FPS; audio is AAC stereo unless the source requires otherwise.
-- Every expected subtitle event appears and contains complete text.
-- Verify difficult cues from the final outputs, not only the ASS or preview.
-- The A final word remains audible.
-- B audio is audible during the transition and synchronized afterward.
-- Transition has real A motion, push-in, edge blur, no freeze, no black frames, and no obvious ghosting.
-- Filenames contain the correct requesters, B sequence, and final B label.
+遇到以上情况时停止批量，只输出待确认样片或问题清单。
