@@ -1,9 +1,9 @@
 ---
-name: g36-video-production
-description: 执行 G36 买量视频 AaddB 混剪、海外 EN/JP/TC/KR 完整本地化、已有简中成片双尺寸适配，以及为本地配音流程自动安装或复用 VoxCPM。用于有明确原片的剪辑、配音、字幕、画幅、尾板、命名和成片质检；不用于 AI 剧情生成或单纯文件归档。
+name: video-production-workflows
+description: 执行买量视频 AaddB 混剪、海外 EN/JP/TC/KR 完整本地化、已有简中成片双尺寸适配，以及为本地配音流程自动安装或复用 VoxCPM。用于有明确原片的剪辑、配音、字幕、画幅、尾板、命名和成片质检；不用于 AI 剧情生成或单纯文件归档。
 ---
 
-# G36 视频生产
+# 视频生产工作流
 
 ## 选择流程
 

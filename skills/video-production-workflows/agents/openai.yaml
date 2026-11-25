@@ -1,0 +1,4 @@
+interface:
+  display_name: "视频生产工作流：AaddB 与本地化"
+  short_description: "执行买量视频 AaddB、海外四语四尺寸本地化与 VoxCPM 部署"
+  default_prompt: "用 $video-production-workflows 盘点这批素材，按指定的 AaddB 或海外本地化流程制作并验收。"

@@ -8,7 +8,7 @@
 
 ## 2. 自动部署（Windows）
 
-只有用户要求部署，或确需生成且授权配置环境时，才实际安装软件。以下命令在技能目录运行；新机默认安装到 `%LOCALAPPDATA%\G36Tools\VoxCPM`，改位置用 `-InstallDir`。先计划再执行：
+只有用户要求部署，或确需生成且授权配置环境时，才实际安装软件。以下命令在技能目录运行；新机默认安装到 `%LOCALAPPDATA%\VideoProductionTools\VoxCPM`，改位置用 `-InstallDir`。先计划再执行：
 
 ```powershell
 powershell -NoProfile -File .\scripts\install-voxcpm.ps1 -PlanOnly

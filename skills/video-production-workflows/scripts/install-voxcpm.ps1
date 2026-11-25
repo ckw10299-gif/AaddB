@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'G36Tools\VoxCPM'),
+    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'VideoProductionTools\VoxCPM'),
     [ValidateSet('auto','cpu','cuda')][string]$Device = 'auto',
     [string]$TorchIndexUrl,
     [string]$Revision,
