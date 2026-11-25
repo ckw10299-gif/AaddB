@@ -1,0 +1,115 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import os, re, shutil, subprocess as sp, sys
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
+import asset_local_full as prev
+from asset_local_full import BASE,SRC,OUT,PACK,SIZES,WORK,stamp,run,ff,probe
+
+STAGE=OUT.parent/'<PROJECT_VALUE>'
+BACK=OUT.parent/'<PROJECT_VALUE>'
+LANGS=PROJECT_INPUT['LANGS']
+SPLIT=PROJECT_INPUT['SPLIT']
+
+def cues_for(lang):
+    voice=OUT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+    tempo,cuts,end=prev.sparse_audio(lang,voice)
+    raw=[]
+    for a,b,t in prev.CAPTIONS[lang]:
+        if t in SPLIT:
+            mid,left,right=SPLIT[t]
+            assert ' '.join([left,right])==t
+            raw.extend([(a,mid,left),(mid,b,right)])
+        else:raw.append((a,b,t))
+    def xf(t):return (t-sum(max(0,min(t,b)-a) for a,b in cuts))/tempo
+    cues=[(max(0,xf(a)-PROJECT_NUMBER),min(end,xf(b)+PROJECT_NUMBER),t) for a,b,t in raw]
+    cues=[(a,min(b,cues[i+1][0]-PROJECT_NUMBER) if i+1<len(cues) else end,t) for i,(a,b,t) in enumerate(cues)]
+    assert all(b-a>PROJECT_NUMBER for a,b,t in cues)
+    return cues
+
+def make_ass(lang,size,cues):
+    ix=SIZES.index(size)
+    w,h=map(int,size.split('x'))
+    x_sub=PROJECT_INPUT['x_sub']
+    y_sub=PROJECT_INPUT['y_sub']
+    font=PROJECT_INPUT['font']
+    fs=PROJECT_INPUT['fs']
+    border=[7,5,5,6][ix]
+    path=WORK/f'asset_large_{lang}_{size}.ass'
+    details=f'''[Script Info]
+ScriptType: v4.00+
+PlayResX: {w}
+PlayResY: {h}
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+[V4+ Styles]
+Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
+Style: Default,<PROJECT_STYLE_FIELDS>
+[Events]
+Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+'''
+    def format_text(t):
+        return r'{\an2\pos('+str(x_sub)+','+str(y_sub)+')}' + t.replace('<PROJECT_VALUE>','<PROJECT_VALUE>'+font+r'\b1}')
+    path.write_text(details+''.join(f'Dialogue: 0,{stamp(a,True)},{stamp(b,True)},Default,,0,0,0,,{format_text(t)}\n' for a,b,t in cues),encoding='utf-8-sig')
+    return path
+
+def assert_fit(path,size,cues):
+    ix=SIZES.index(size)
+    limits=[(0,PROJECT_NUMBER),(PROJECT_NUMBER,PROJECT_NUMBER),(PROJECT_NUMBER,PROJECT_NUMBER),(PROJECT_NUMBER,PROJECT_NUMBER)][ix]
+    cmd=['ffmpeg','-hide_banner','-loglevel','verbose','-f','lavfi','-i',f'color=black:s={size}:r=10:d=25.5','-vf',f'ass=work/{path.name},bbox=min_val=200','-f','null','NUL']
+    r=run(cmd,capture_output=True,text=True,encoding='utf-8',errors='replace').stderr
+    b=[tuple(map(float,m.groups())) for m in re.finditer(r'pts_time:([\d.]+) x1:(\d+) x2:(\d+) y1:(\d+) y2:(\d+) w:(\d+) h:(\d+)',r)]
+    assert b and 'failed to find any fallback' not in r.lower(),path
+    out=[(t,left,right,next((s for a,f,s in cues if a-PROJECT_NUMBER<=t<=f+PROJECT_NUMBER),'')) for t,left,right,*_ in b if left<limits[0]+8 or right>limits[1]-9]
+    if out:print(path.name,'EDGE',out[0],flush=True)
+    else:print(path.name,'FIT',max(x[5] for x in b),max(x[6] for x in b),flush=True)
+    return not out
+
+def render(lang,size,ass):
+    ix=SIZES.index(size)
+    w,h=map(int,size.split('x'))
+    stem,tail_lang,files=PACK[lang]
+    card=BASE/'<PROJECT_VALUE>'/stem/(files[ix]+'.png')
+    tail=BASE/'<PROJECT_VALUE>'/tail_lang/'<PROJECT_VALUE>'
+    name='<PROJECT_VALUE>'
+    original=OUT/'<PROJECT_VALUE>'/name
+    dest=STAGE/'<PROJECT_VALUE>'/name
+    if dest.exists():return
+    if ix==0:
+        y="if(lt(n,44),140,if(lt(n,93),90+2.8*(n-44),if(lt(n,224),258,if(lt(n,306),236,if(lt(n,430),194,if(lt(n,639),296,310))))))"
+        layout=f"crop=<PROJECT_GEOMETRY>:'{y}',scale=<PROJECT_GEOMETRY>:flags=lanczos"
+        x,y0=0,PROJECT_NUMBER
+    else:
+        x,y0,fgw,fgh=[None,(PROJECT_NUMBER,0,PROJECT_NUMBER,PROJECT_NUMBER),(PROJECT_NUMBER,0,PROJECT_NUMBER,PROJECT_NUMBER),(PROJECT_NUMBER,0,PROJECT_NUMBER,PROJECT_NUMBER)][ix]
+        layout=f'scale={fgw}:{fgh}:flags=lanczos'
+    fc=(f'[0:v]fps=<PROJECT_VALUE>,{layout},setsar=1,format=rgb24[fg];'
+        f'[fg]pad={w}:{h}:{x}:{y0}:color=black[canvas];'
+        '<PROJECT_VALUE>'
+        '<PROJECT_VALUE>'
+        '[body][tail]concat=n=2:v=1:a=0[v]')
+    tmp=dest.with_suffix('.partial.mp4')
+    ff('-threads',2,'-i',SRC,'-threads',1,'-i',tail,'-threads',1,'-i',card,'-i',original,'-filter_complex_threads',2,'-filter_complex',fc,'-map','[v]','-map','3:a:0','-c:v','libx264','-threads',4,'-preset','fast','-crf',PROJECT_NUMBER,'-pix_fmt','<PROJECT_VALUE>','-c:a','copy','-movflags','+faststart',tmp)
+    tmp.rename(dest)
+    print('DONE',lang,size,flush=True)
+
+if __name__=='__main__':
+    pending=[]
+    okay=True
+    for lang in LANGS:
+        if '--render' in sys.argv:
+            for sub in ['<PROJECT_VALUE>','<PROJECT_VALUE>']:(STAGE/sub).mkdir(parents=True,exist_ok=True)
+        cues=cues_for(lang)
+        if '--render' in sys.argv:
+            (STAGE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>').write_text(''.join(f'{i}\n{stamp(a)} --> {stamp(b)}\n{t}\n\n' for i,(a,b,t) in enumerate(cues,1)),encoding='utf-8-sig')
+        for size in SIZES:
+            ass=make_ass(lang,size,cues)
+            okay=assert_fit(ass,size,cues) and okay
+            pending.append((lang,size,ass))
+    if not okay:sys.exit(2)
+    if '--render' in sys.argv:
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            for f in [pool.submit(render,*args) for args in pending]:f.result()

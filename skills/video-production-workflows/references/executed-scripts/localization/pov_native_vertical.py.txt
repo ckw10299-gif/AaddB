@@ -1,0 +1,76 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import os, shutil
+from concurrent.futures import ThreadPoolExecutor
+from PIL import ImageChops, ImageStat
+from asset_pov_batch import DEST,TITLES,LANGS,PACK,BASE,WORK,result,media,stem,ass_setup,duration
+from asset_pov_sample import srt_cues
+from asset_local_full import ff,run,probe
+from asset_local_qc import frame
+
+SIZE='PROJECT_SIZE'
+STAGE=DEST.parent/'<PROJECT_VALUE>'
+BACKUP=DEST.parent/'<PROJECT_VALUE>'
+
+def audio_hash(p):
+    return run(['ffmpeg','-v','error','-i',p,'-map','0:a:0','-c:a','copy','-hash','sha256','-f','hash','pipe:1'],capture_output=True).stdout
+
+def dist(x,y):return max(ImageStat.Stat(ImageChops.difference(x,y)).mean)
+
+def make_one(job):
+    title,lang=job
+    src=media(title)
+    old=result(title,lang,SIZE)
+    assert old.is_file(),old
+    tmp=STAGE/old.name
+    tl=PACK[lang][1]
+    tail=BASE/'<PROJECT_VALUE>'/tl/'<PROJECT_VALUE>'
+    sub=DEST/'<PROJECT_VALUE>'/f'{stem(title,lang)}.srt'
+    ass,_=ass_setup(title,lang,SIZE,srt_cues(sub),native_vertical=True)
+    fc=('<PROJECT_VALUE>'
+        '<PROJECT_VALUE>'
+        '[body][tail]concat=n=2:v=1:a=0[v]')
+    if not tmp.exists():
+        part=tmp.with_suffix('.partial.mp4')
+        ff('-threads',2,'-i',src,'-threads',1,'-i',tail,'-i',old,'-filter_complex_threads',2,'-filter_complex',fc,'-map','[v]','-map','2:a:0','-c:v','libx264','-threads',4,'-preset','fast','-crf',PROJECT_NUMBER,'-pix_fmt','<PROJECT_VALUE>','-c:a','copy','-movflags','+faststart',part)
+        part.rename(tmp)
+    v,a=probe(tmp)['streams']
+    assert (v['width'],v['height'],v['r_frame_rate'],v['codec_name'],a['codec_name'])==(PROJECT_NUMBER,PROJECT_NUMBER,'30/1','h264','aac')
+    assert v['nb_frames']==probe(old)['streams'][0]['nb_frames']
+    assert audio_hash(tmp)==audio_hash(old)
+    run(['ffmpeg','-v','error','-xerror','-threads','2','-i',tmp,'-f','null','NUL'],capture_output=True)
+    for t in (PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER):
+        original=frame(src,t,PROJECT_NUMBER,PROJECT_NUMBER); new=frame(tmp,t,PROJECT_NUMBER,PROJECT_NUMBER)
+        for area in [(0,0,PROJECT_NUMBER,PROJECT_NUMBER),(0,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER)]:
+            assert dist(original.crop(area),new.crop(area))<3,(title,lang,t,area)
+    body=duration(src)
+    for t in (PROJECT_NUMBER,PROJECT_NUMBER):
+        assert dist(frame(tail,t,PROJECT_NUMBER,PROJECT_NUMBER),frame(tmp,body+t,PROJECT_NUMBER,PROJECT_NUMBER))<5,(title,lang,t)
+    frame(tmp,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER).save(WORK/f'asset_pov_native_proof_{title}_{lang}.png')
+    print('VERIFIED',old.name,flush=True)
+    return old,tmp
+
+if __name__=='__main__':
+    STAGE.mkdir(exist_ok=True)
+    BACKUP.mkdir(exist_ok=True)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        pairs=list(pool.map(make_one,[(t,l) for t in TITLES for l in LANGS]))
+    for old,tmp in pairs:
+        bak=BACKUP/old.name
+        if not bak.exists():
+            with old.open('rb') as a,bak.open('xb') as b:shutil.copyfileobj(a,b)
+        assert bak.stat().st_size==old.stat().st_size
+    done=[]
+    for old,tmp in pairs:
+        try:
+            os.replace(tmp,old)
+            done.append(old.name)
+            print('PUBLISHED',old.name,flush=True)
+        except PermissionError:
+            print('FILE_IN_USE',old.name,'CORRECTED_COPY',tmp,flush=True)
+    (DEST/'<PROJECT_VALUE>').write_text('<PROJECT_VALUE>'+'\n'.join(done)+'\n',encoding='utf-8-sig')
+    if len(done)!=PROJECT_NUMBER:raise SystemExit(3)

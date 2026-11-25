@@ -1,0 +1,68 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import hashlib, os, shutil
+from concurrent.futures import ThreadPoolExecutor
+from PIL import Image,ImageChops,ImageStat
+from asset_local_full import BASE, PACK, SRC, WORK, ff, run, probe
+from asset_local_qc import frame
+
+ROOT=BASE/'<PROJECT_VALUE>'
+PRODUCT=ROOT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+ARCHIVE=ROOT/'<PROJECT_VALUE>'
+STAGE=ROOT/'<PROJECT_VALUE>'
+
+def audio_hash(p):
+    return run(['ffmpeg','-v','error','-i',p,'-map','0:a:0','-c:a','copy','-hash','sha256','-f','hash','pipe:1'],capture_output=True).stdout
+
+def build(lang):
+    name='<PROJECT_VALUE>'
+    old=PRODUCT/name
+    tmp=STAGE/name
+    tail_lang=PACK[lang][1]
+    tail=BASE/'<PROJECT_VALUE>'/tail_lang/'<PROJECT_VALUE>'
+    ass=WORK/f'asset_native_{lang}_1080x1920.ass'
+    if lang=='PROJECT_LANGUAGE':
+        data=(WORK/'asset_en_rounded_v3_1080x1920.ass').read_text(encoding='utf-8-sig')
+    else:
+        data=(WORK/f'asset_large_{lang}_1080x1920.ass').read_text(encoding='utf-8-sig').replace(r'\pos(540,1240)',r'\pos(540,1478)')
+    ass.write_text(data,encoding='utf-8-sig')
+    fc=('<PROJECT_VALUE>'
+        '<PROJECT_VALUE>'
+        '[body][tail]concat=n=2:v=1:a=0[v]')
+    if not tmp.exists():
+        ff('-threads',2,'-i',SRC,'-threads',1,'-i',tail,'-i',old,'-filter_complex_threads',2,'-filter_complex',fc,'-map','[v]','-map','2:a:0','-c:v','libx264','-threads',4,'-preset','fast','-crf',PROJECT_NUMBER,'-pix_fmt','<PROJECT_VALUE>','-c:a','copy','-movflags','+faststart',tmp)
+    v,a=probe(tmp)['streams']
+    assert (v['width'],v['height'],v['r_frame_rate'],v['nb_frames'],v['codec_name'],a['codec_name'])==(PROJECT_NUMBER,PROJECT_NUMBER,'30/1','859','h264','aac')
+    assert audio_hash(tmp)==audio_hash(old)
+    run(['ffmpeg','-v','error','-xerror','-threads','2','-i',tmp,'-f','null','NUL'],capture_output=True)
+    def dist(a,b):return max(ImageStat.Stat(ImageChops.difference(a,b)).mean)
+    source=frame(SRC,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER)
+    output=frame(tmp,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER)
+
+    for area in [(0,0,PROJECT_NUMBER,PROJECT_NUMBER),(0,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER)]:
+        assert dist(source.crop(area),output.crop(area))<3
+    for t in (PROJECT_NUMBER,PROJECT_NUMBER):
+        assert dist(frame(tail,t,PROJECT_NUMBER,PROJECT_NUMBER),frame(tmp,PROJECT_NUMBER+t,PROJECT_NUMBER,PROJECT_NUMBER))<5
+    output.save(WORK/f'asset_native_{lang}_proof.png')
+    print('VERIFIED',lang,flush=True)
+    return (old,tmp)
+
+if __name__=='__main__':
+    STAGE.mkdir(exist_ok=True)
+    ARCHIVE.mkdir(exist_ok=True)
+    with ThreadPoolExecutor(max_workers=4) as pool:items=list(pool.map(build,PACK))
+    for old,tmp in items:
+        backup=ARCHIVE/old.name
+        if not backup.exists():
+            with old.open('rb') as a,backup.open('xb') as b:shutil.copyfileobj(a,b)
+        assert backup.stat().st_size==old.stat().st_size
+    for old,tmp in items:
+        try:
+            os.replace(tmp,old)
+            print('PUBLISHED',old,flush=True)
+        except PermissionError:
+            print('FILE_IN_USE',old,'CORRECTED_COPY',tmp,flush=True)

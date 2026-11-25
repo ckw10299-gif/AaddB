@@ -1,0 +1,77 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+import json,re,sys
+from PIL import Image,ImageDraw,ImageChops,ImageStat
+from asset_pov_batch import DEST,TITLES,LANGS,GEOM,SIZES,PACK,BASE,WORK,result,media,stem,duration,effective_end
+from asset_local_full import run,probe
+from asset_local_qc import frame
+
+def verify(title,lang,size):
+    p=result(title,lang,size)
+    ix=SIZES.index(size)
+    w,h,*_=GEOM[ix]
+    body=duration(media(title))
+    vid,aud=probe(p)['streams']
+    assert (vid['width'],vid['height'],vid['r_frame_rate'],vid['codec_name'],aud['codec_name'],aud['channels'])==(w,h,'30/1','h264','aac',2),p
+    run(['ffmpeg','-v','error','-xerror','-threads',2,'-i',p,'-f','null','NUL'],capture_output=True)
+    tail_lang=PACK[lang][1]
+    tail=BASE/'<PROJECT_VALUE>'/tail_lang/'<PROJECT_VALUE>'
+    td=duration(tail)
+    assert abs(float(vid['duration'])-body-td)<PROJECT_NUMBER,p
+    dd=[]
+
+
+    for off in (PROJECT_NUMBER,PROJECT_NUMBER):
+        d=max(ImageStat.Stat(ImageChops.difference(frame(tail,off,PROJECT_NUMBER,PROJECT_NUMBER),frame(p,body+off,PROJECT_NUMBER,PROJECT_NUMBER))).mean)
+        dd.append(d)
+    assert max(dd)<7,(title,lang,size,dd)
+    a=run(['ffmpeg','-hide_banner','-i',p,'-vn','-af','ebur128=peak=true','-f','null','NUL'],capture_output=True,text=True,encoding='utf-8',errors='replace').stderr.rsplit('Summary:',1)[-1]
+    I,pk=[float(re.search(rx,a)[1]) for rx in ('<PROJECT_VALUE>','<PROJECT_VALUE>')]
+    assert -PROJECT_NUMBER<I<-6 and pk<0,(p,I,pk)
+    version=DEST/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+    gap=round(body-effective_end(version),3)
+    assert PROJECT_NUMBER<=gap<=PROJECT_NUMBER
+
+    widths=[PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER]
+    xp=widths[ix]
+    yp=round(xp*h/w)
+    previews=[frame(p,t,xp,yp) for t in (PROJECT_NUMBER,body*PROJECT_NUMBER,body+PROJECT_NUMBER)]
+    return (title,lang,size,I,pk,gap,previews)
+
+def montage(rows,title):
+    sub=[r for r in rows if r[0]==title]
+    for k in range(3):
+        sheet=Image.new('RGB',(PROJECT_NUMBER,PROJECT_NUMBER),'#252525')
+        d=ImageDraw.Draw(sheet)
+        for i,(t,l,s,*z) in enumerate(sub):
+            im=z[-1][k]
+            x=i%4*PROJECT_NUMBER;y=i//4*PROJECT_NUMBER
+            sheet.paste(im,(x+(PROJECT_NUMBER-im.width)//2,y+3))
+            d.text((x+7,y+PROJECT_NUMBER),f'{l} {s}',fill='white')
+        sheet.save(WORK/f'asset_pov_final_QA_{TITLES.index(title)}_{k}.jpg',quality=PROJECT_NUMBER)
+
+if __name__=='__main__':
+    keys=[(t,l,s) for t in TITLES for l in LANGS for s in SIZES]
+    expected={result(*k).name for k in keys}
+    assert {p.name for p in (DEST/'<PROJECT_VALUE>').glob('*.mp4')}==expected
+    assert len(list((DEST/'<PROJECT_VALUE>').glob('*.srt')))==len(list((DEST/'<PROJECT_VALUE>').glob('*.wav')))==PROJECT_NUMBER
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures={pool.submit(verify,*k):k for k in keys}
+        vals={}
+        for f in as_completed(futures):
+            row=f.result()
+            vals[futures[f]]=row
+            print('QA',*row[:-1],flush=True)
+    rows=[vals[k] for k in keys]
+    for title in TITLES:montage(rows,title)
+    report='<PROJECT_VALUE>'
+    for t,l,s,lv,tp,gap,_ in rows:
+        report+='<PROJECT_VALUE>'
+    (DEST/'<PROJECT_VALUE>').write_text(report,encoding='utf-8-sig')
+    print('QA PASS',len(rows),flush=True)

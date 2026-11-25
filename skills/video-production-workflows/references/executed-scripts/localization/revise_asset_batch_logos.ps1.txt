@@ -1,0 +1,77 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+$ErrorActionPreference = 'Stop'
+$base = '<PROJECT_VALUE>'
+$sourceDir = Join-Path $base '<PROJECT_VALUE>'
+$outRoot = Join-Path $sourceDir '<PROJECT_VALUE>'
+$ffmpeg = (Get-Command ffmpeg).Source
+$ffprobe = (Get-Command ffprobe).Source
+$sources = @(Get-ChildItem -LiteralPath $sourceDir -File -Filter '*.mp4' | Sort-Object Name)
+if ($sources.Count -ne 4) { throw "Expected 4 source videos, found $($sources.Count)" }
+
+$configs = $ProjectInput
+
+$total = $ProjectValue
+$done = 0
+foreach ($src in $sources) {
+    $sourceInfo = & $ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 $src.FullName
+    $sw,$sh = $sourceInfo -split 'x' | ForEach-Object { [int]$_ }
+    if ($sh -le $sw) { throw "Source is not portrait: $($src.Name) ($sourceInfo)" }
+    $duration = [double](& $ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $src.FullName)
+    $offset = ($duration - <PROJECT_NUMBER>).ToString('<PROJECT_NUMBER>', [Globalization.CultureInfo]::InvariantCulture)
+
+    foreach ($cfg in $configs) {
+        if (!(Test-Path -LiteralPath $cfg.Logo -PathType Leaf)) { throw "Missing logo: $($cfg.Logo)" }
+        foreach ($dim in $cfg.Dims) {
+            $w = [int]$dim[0]; $h = [int]$dim[1]
+            $tailPath = Join-Path (Join-Path $base '<PROJECT_VALUE>') (Join-Path $cfg.TailFolder ("{0} {1}x{2}.mp4" -f $cfg.TailPattern,$w,$h))
+            if (!(Test-Path -LiteralPath $tailPath -PathType Leaf)) { throw "Missing tailboard: $tailPath" }
+            $expectedTail = "${w}x${h}"
+            $tailSize = & $ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 $tailPath
+            if ($tailSize -ne $expectedTail) { throw "Tailboard dimension mismatch: $tailPath ($tailSize)" }
+
+            $fgw = [Math]::Min($w, [int][Math]::Round($h * $sw / $sh / 2, 0) * 2)
+            $fgh = [int][Math]::Round($fgw * $sh / $sw / 2, 0) * 2
+            if ($fgh -gt $h) { $fgh=$h; $fgw=[int][Math]::Round($fgh * $sw / $sh / 2, 0) * 2 }
+            $x = [int][Math]::Floor(($w-$fgw)/2); $y=[int][Math]::Floor(($h-$fgh)/2)
+            $logoW = if ($w -eq 1080 -and $h -eq 1920) { <PROJECT_NUMBER> } else { <PROJECT_NUMBER> }
+            $logoW = [Math]::Min($logoW, $fgw)
+            $logoX = $x + [Math]::Max(8,[int][Math]::Round($fgw * <PROJECT_NUMBER>))
+            $logoY = $y + [Math]::Max(8,[int][Math]::Round($fgh * <PROJECT_NUMBER>))
+            $fc = '<PROJECT_VALUE>'
+            $safeStem = [IO.Path]::GetFileNameWithoutExtension($src.Name)
+            $fileName = "${safeStem}_$($cfg.Language)_${w}x${h}_$($cfg.CTA).mp4"
+            $dest = Join-Path (Join-Path $outRoot $cfg.Folder) $fileName
+            $flat = Join-Path $outRoot $fileName
+            if (!(Test-Path -LiteralPath $dest -PathType Leaf) -or !(Test-Path -LiteralPath $flat -PathType Leaf)) { throw "Expected prior output/copy missing: $fileName" }
+            $tmp = "$dest.logo-revised.mp4"
+            if (Test-Path -LiteralPath $tmp) { throw "Unexpected staging file exists: $tmp" }
+
+            & $ffmpeg -y -hide_banner -loglevel error -i $src.FullName -i $tailPath -loop 1 -i $cfg.Logo -filter_complex $fc -map '[v]' -map '[a]' -c:v libx264 -preset veryfast -crf <PROJECT_NUMBER> -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart -shortest $tmp
+            if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $tmp -PathType Leaf)) { throw "Render failed: $fileName" }
+            $newSize = & $ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 $tmp
+            if ($newSize -ne $expectedTail) { throw "Rendered dimension mismatch: $fileName ($newSize)" }
+            $audio = @(& $ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 $tmp)
+            if ($audio -notcontains 'audio') { throw "Rendered audio missing: $fileName" }
+
+            Move-Item -LiteralPath $tmp -Destination $dest -Force
+            Copy-Item -LiteralPath $dest -Destination $flat -Force
+            $done++
+            Write-Output "[$done/$total] $fileName (logo=${logoW}px)"
+        }
+    }
+}
+
+if ($done -ne $total) { throw "Revised $done of $total outputs" }
+$categorized = @(Get-ChildItem -LiteralPath $outRoot -Directory | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -File -Filter '*.mp4' })
+$flatFiles = @(Get-ChildItem -LiteralPath $outRoot -File -Filter '*.mp4')
+if ($categorized.Count -ne <PROJECT_NUMBER> -or $flatFiles.Count -ne <PROJECT_NUMBER>) { throw "Final count mismatch: categorized=$($categorized.Count), flat=$($flatFiles.Count)" }
+foreach ($f in $categorized) {
+    $flat = Join-Path $outRoot $f.Name
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath $f.FullName).Hash -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $flat).Hash) { throw "Copy mismatch: $($f.Name)" }
+}
+Write-Output "COMPLETE categorized=<PROJECT_NUMBER> flat=<PROJECT_NUMBER> hashes=verified"

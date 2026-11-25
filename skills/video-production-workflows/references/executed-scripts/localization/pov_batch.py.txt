@@ -1,0 +1,142 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import re, shutil, sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from asset_local_full import PACK, SIZES, BASE, WORK, run, ff, probe, silence, stamp
+from asset_pov_sample import ROOT,BGM,ASS_HEADER,CN,OUT as SAMPLE_OUT,srt_cues
+
+DEST=ROOT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+PRIOR=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+TITLES=PROJECT_INPUT['TITLES']
+LANGS=PROJECT_INPUT['LANGS']
+asset=PROJECT_INPUT['asset']
+GEOM=PROJECT_INPUT['GEOM']
+NAMES=PROJECT_INPUT['NAMES']
+
+def stem(title,lang): return '<PROJECT_VALUE>'
+def media(title): return next((ROOT/'<PROJECT_VALUE>').glob(title+'*.mp4'))
+def result(title,lang,size):return DEST/'<PROJECT_VALUE>'/f'{stem(title,lang)}_{size}.mp4'
+def duration(p):return float(probe(p)['streams'][0]['duration'])
+def effective_end(p):
+    full=float(probe(p)['format']['duration'])
+    return next((a for a,b in reversed(silence(p)) if abs(full-b)<PROJECT_NUMBER),full)
+
+def prepare_audio(title,lang,body):
+    voice=DEST/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+    prev=PRIOR/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+    speed=PROJECT_INPUT['speed']
+    if not voice.exists():
+        ff('-i',prev,'-af',f'atempo={speed:.9f}','-c:a','pcm_s24le',voice)
+    end=effective_end(voice)
+    assert PROJECT_NUMBER<body-end<PROJECT_NUMBER,(title,lang,end,body,speed)
+    cues=[(a/speed,b/speed,t) for a,b,t in srt_cues(PRIOR/'<PROJECT_VALUE>'/'<PROJECT_VALUE>')]
+    last=body if title=='<PROJECT_VALUE>' else end
+    cues=[(a,cues[i+1][0] if i+1<len(cues) else last,t) for i,(a,b,t) in enumerate(cues)]
+    assert all(b>a and '\n' not in t for a,b,t in cues)
+    sub=DEST/'<PROJECT_VALUE>'/f'{stem(title,lang)}.srt'
+    sub.write_text(''.join(f'{i}\n{stamp(a)} --> {stamp(b)}\n{t}\n\n' for i,(a,b,t) in enumerate(cues,1)),encoding='utf-8-sig')
+    return voice,cues,round(body-end,3)
+
+def rounded(width,height,x,y):
+    w,h,r=width,height,round(height*PROJECT_NUMBER)
+    return (r'{\an7\pos('+f'{x-width//2},{y-height//2}'+r')\bord0\shad0\1c<PROJECT_COLOUR>\p1}'
+        f'm {r} 0 l {w-r} 0 b {w-5} 0 {w} 5 {w} {r} l {w} {h-r} '
+        f'b {w} {h-5} {w-5} {h} {w-r} {h} l {r} {h} b 5 {h} 0 {h-5} 0 {h-r} '
+        f'l 0 {r} b 0 5 5 0 {r} 0'+r'{\p0}')
+
+def ass_setup(title,lang,size,cues,native_vertical=False):
+    ix=SIZES.index(size)
+    w,h,fw,fh,x0,y0=GEOM[ix]
+    x=x0+fw//2
+    y=[PROJECT_NUMBER,PROJECT_NUMBER if title=='<PROJECT_VALUE>' else PROJECT_NUMBER,PROJECT_NUMBER if title=='<PROJECT_VALUE>' else PROJECT_NUMBER,PROJECT_NUMBER if title=='<PROJECT_VALUE>' else PROJECT_NUMBER][ix]
+    if native_vertical:
+        assert ix==0
+        y=PROJECT_NUMBER if title=='<PROJECT_VALUE>' else PROJECT_NUMBER
+    plate_h=PROJECT_INPUT['plate_h']
+    fs=PROJECT_INPUT['fs']
+    stroke=PROJECT_INPUT['stroke']
+    bold=PROJECT_INPUT['bold']
+    font=PROJECT_INPUT['font']
+    ass=WORK/f'asset_pov_{"native" if native_vertical else "final"}_{TITLES.index(title)}_{lang}_{size}.ass'
+    hdr=ASS_HEADER.replace('PlayResX: 1080',f'PlayResX: {w}').replace('PlayResY: 1350',f'PlayResY: {h}')
+    hdr=hdr.replace('<PROJECT_VALUE>',f'{font},{fs}').replace(',0,0,0,0,100,100,0,0,1,3.2,0,5,',f',{bold},0,0,0,100,100,0,0,1,{stroke},0,5,')
+    def style(t):
+        return t if lang=='PROJECT_LANGUAGE' else t.replace('<PROJECT_VALUE>','<PROJECT_VALUE>'+font+r'\b1}')
+    def pos(extra=''):return '<PROJECT_VALUE>'+f'{x},{y}'+')'+extra+'}'
+
+    ref=WORK/f'asset_pov_glyph_{TITLES.index(title)}_{lang}_{size}.ass'
+    ref.write_text(hdr+''.join(f'Dialogue: 0,{stamp(i,True)},{stamp(i+1,True)},Default,,0,0,0,,'
+        +pos(r'\1c<PROJECT_COLOUR>\3c<PROJECT_COLOUR>')+style(t)+'\n' for i,(a,b,t) in enumerate(cues)),encoding='utf-8-sig')
+    r=run(['ffmpeg','-hide_banner','-f','lavfi','-i',f'color=black:s={size}:r=1:d={len(cues)}','-vf',f'ass=work/{ref.name},bbox=min_val=200','-f','null','NUL'],capture_output=True,text=True,encoding='utf-8',errors='replace').stderr
+    bounds=[tuple(map(int,m.groups())) for m in re.finditer(r'\bw:(\d+) h:(\d+) crop=',r)]
+    assert len(bounds)==len(cues) and 'failed to find any fallback' not in r.lower(),(lang,size,bounds)
+    cns=asset if title=='<PROJECT_VALUE>' else CN
+    ev=[]; widths=[]
+    for (a,b,t),(tw,th) in zip(cues,bounds):
+        guard=max((n for t0,t1,n in cns if a<t1 and b>t0),default=0) if ix or native_vertical else 0
+        wtxt=tw+([PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER][ix])
+        width=2*round(max(PROJECT_NUMBER,wtxt,guard*fw/PROJECT_NUMBER+(PROJECT_NUMBER if native_vertical else [0,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER][ix]))/2)
+        assert width<=fw-PROJECT_NUMBER and th<plate_h-PROJECT_NUMBER,(title,lang,size,t,width,th,plate_h)
+        widths.append(width)
+        head=f'{stamp(a,True)},{stamp(b,True)},Default,,0,0,0,,'
+        ev+=['Dialogue: 0,'+head+rounded(width,plate_h,x,y)+'\n','Dialogue: 1,'+head+pos()+style(t)+'\n']
+    ass.write_text(hdr+''.join(ev),encoding='utf-8-sig')
+    return ass,(min(widths),max(widths))
+
+def render(title,lang,size,body,voice,ass):
+    ix=SIZES.index(size)
+    w,h,fw,fh,x,y=GEOM[ix]
+    dest=result(title,lang,size)
+    if dest.exists():return
+    card_lang,tail_lang,files=PACK[lang]
+    card=BASE/'<PROJECT_VALUE>'/card_lang/(files[ix]+'.png')
+    tail=BASE/'<PROJECT_VALUE>'/tail_lang/'<PROJECT_VALUE>'
+    assert card.is_file() and tail.is_file()
+
+    crop_y=PROJECT_INPUT['crop_y']
+    crop=f'crop=720:720:0:{crop_y},' if ix==0 else ''
+    gain=PROJECT_INPUT['gain']
+    fc=(f'[0:v]fps=<PROJECT_VALUE>,{crop}scale={fw}:{fh}:flags=lanczos,setsar=1,format=rgb24,pad={w}:{h}:{x}:{y}:color=black[fg];'
+        '<PROJECT_VALUE>'
+        '<PROJECT_VALUE>'
+        '[body][tail]concat=n=2:v=1:a=0[v];'
+        f'[3:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=<PROJECT_VALUE>dB,atrim=duration={body:.6f},afade=t=in:d=0.09,afade=t=out:st={body-.28:.6f}:d=0.28[bed];'
+        f'[4:a]aformat=sample_rates=48000:channel_layouts=stereo,highpass=f=85,equalizer=f=250:t=o:w=1.4:g=<PROJECT_VALUE>,equalizer=f=3000:t=o:w=1.5:g=<PROJECT_VALUE>,volume={gain}dB,apad,atrim=duration={body:.6f}[voice];'
+        '[bed][voice]amix=inputs=2:normalize=0,volume=<PROJECT_VALUE>dB,alimiter=limit=<PROJECT_VALUE>:level=0:latency=1[mix];'
+        '[1:a]aformat=sample_rates=48000:channel_layouts=stereo,alimiter=limit=<PROJECT_VALUE>:level=0:latency=1,afade=t=in:d=0.06[cta];'
+        '[mix][cta]concat=n=2:v=0:a=1[a]')
+    tmp=dest.with_suffix('.partial.mp4')
+    ff('-threads',2,'-i',media(title),'-threads',1,'-i',tail,'-i',card,'-i',BGM,'-i',voice,'-filter_complex_threads',2,'-filter_complex',fc,'-map','[v]','-map','[a]','-c:v','libx264','-threads',4,'-preset','fast','-crf',PROJECT_NUMBER,'-pix_fmt','<PROJECT_VALUE>','-c:a','aac','-b:a','320k','-movflags','+faststart',tmp)
+    tmp.rename(dest)
+    print('DONE',title,lang,size,flush=True)
+
+def prep(render_videos):
+    jobs=[]
+    for t in TITLES:
+        body=duration(media(t))
+        for l in LANGS:
+            voice,cues,gap=prepare_audio(t,l,body)
+            for size in SIZES:
+                if (t,l,size)==('<PROJECT_VALUE>','PROJECT_LANGUAGE','PROJECT_SIZE'):
+                    dest=result(t,l,size)
+                    if render_videos:
+                        if not dest.exists():shutil.copyfile(SAMPLE_OUT/dest.name,dest)
+                        shutil.copyfile(SAMPLE_OUT/'<PROJECT_VALUE>',DEST/'<PROJECT_VALUE>'/f'{stem(t,l)}.srt')
+                    continue
+                ass,bounds=ass_setup(t,l,size,cues)
+                print('FIT',t,l,size,bounds,'GAP',gap,flush=True)
+                jobs.append((t,l,size,body,voice,ass))
+    return jobs
+
+if __name__=='__main__':
+    for sub in ('<PROJECT_VALUE>','<PROJECT_VALUE>','<PROJECT_VALUE>'):(DEST/sub).mkdir(parents=True,exist_ok=True)
+    is_render='--render' in sys.argv
+    jobs=prep(is_render)
+    if is_render:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for f in as_completed([pool.submit(render,*j) for j in jobs]):f.result()

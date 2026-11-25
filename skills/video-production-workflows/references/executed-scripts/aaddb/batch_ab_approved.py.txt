@@ -1,0 +1,208 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import json
+import math
+import subprocess
+from pathlib import Path
+
+
+ROOT = Path('<PROJECT_VALUE>')
+B_ROOT = ROOT / '<PROJECT_VALUE>'
+FIXED = Path('<PROJECT_VALUE>')
+OUT = ROOT / '<PROJECT_VALUE>'
+CARD = FIXED / '<PROJECT_VALUE>' / '<PROJECT_VALUE>' / '<PROJECT_VALUE>'
+TAIL_V = FIXED / '<PROJECT_VALUE>' / '<PROJECT_VALUE>' / '<PROJECT_VALUE>'
+TAIL_H = FIXED / '<PROJECT_VALUE>' / '<PROJECT_VALUE>' / '<PROJECT_VALUE>'
+A = ROOT / '<PROJECT_VALUE>' / '<PROJECT_VALUE>'
+A_START = PROJECT_INPUT['A_START']
+TRANS = PROJECT_INPUT['TRANS']
+W, H = PROJECT_NUMBER, PROJECT_NUMBER
+
+
+
+CUTS = PROJECT_INPUT['CUTS']
+
+
+def probe(path):
+    raw = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", str(path)],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    ).stdout
+    data = json.loads(raw)
+    vs = next(s for s in data["streams"] if s["codec_type"] == "video")
+    au = next((s for s in data["streams"] if s["codec_type"] == "audio"), None)
+    return {"duration": float(data["format"]["duration"]), "width": int(vs["width"]), "height": int(vs["height"]), "audio": au is not None}
+
+
+def get_bname(path):
+    if path.name.startswith('<PROJECT_VALUE>'):
+        return path.stem
+    return path.stem.split(";")[-1].strip()
+
+
+def esc_num(value):
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def edge_blur(graph, prefix, inp, width, height, offset, duration, outlabel):
+    end = offset + duration
+    pre, mid, post = (f"{prefix}_{x}" for x in ("pre", "mid", "post"))
+    sharp, blurred, gb, mask, bluredge = (f"{prefix}_{x}" for x in ("sharp", "blurred", "gb", "mask", "edge"))
+    graph.extend([
+        f"[{inp}]split=3[{prefix}_s0][{prefix}_s1][{prefix}_s2]",
+        f"[{prefix}_s0]trim=end={esc_num(offset)},setpts=PTS-STARTPTS[{pre}]",
+        f"[{prefix}_s1]trim=start={esc_num(offset)}:end={esc_num(end)},setpts=PTS-STARTPTS[{mid}]",
+        f"[{prefix}_s2]trim=start={esc_num(end)},setpts=PTS-STARTPTS[{post}]",
+        '<PROJECT_VALUE>',
+        f"[{blurred}]gblur=sigma=<PROJECT_VALUE>[{gb}]",
+        '<PROJECT_VALUE>'
+        f"geq=lum='255*(1-min(1,pow(hypot(X-W/2,Y-H/2)/hypot(W/2,H/2),1.7)))':cb=128:cr=128[{mask}]",
+        '<PROJECT_VALUE>',
+        f"[{pre}][{bluredge}][{post}]concat=n=3:v=1:a=0[{outlabel}]",
+    ])
+
+
+def zoom_expr(kind, dur, start_frame):
+    total = max(1, round(dur * PROJECT_NUMBER))
+    n = round(TRANS * PROJECT_NUMBER)
+    if kind == "a":
+        return f"if(gte(on,{start_frame}),min(1.04,1+0.04*(on-{start_frame})/{n}),1)"
+    if kind == "b":
+        tail_start = max(n, total - n)
+        return f"if(lte(on,{n}),1.04-0.04*on/{n},if(gte(on,{tail_start}),min(1.04,1+0.04*(on-{tail_start})/{n}),1))"
+    return f"if(lte(on,{n}),1.04-0.04*on/{n},1)"
+
+
+def render_one(b, b_cut, a_info, b_info, tail, orientation, output):
+    b_duration = b_cut if b_cut is not None else b_info["duration"]
+    tail_info = probe(tail)
+    c_offset = A_START + b_duration - TRANS
+    a_vframes = round(a_info["duration"] * PROJECT_NUMBER)
+    b_vframes = round(b_duration * PROJECT_NUMBER)
+    a_graph, v_graph = [], []
+    a_start_frame = round(A_START * PROJECT_NUMBER)
+    a_z = zoom_expr("a", a_info["duration"], a_start_frame)
+    b_z = zoom_expr("b", b_duration, 0)
+    c_z = zoom_expr("c", tail_info["duration"], 0)
+
+
+    for idx, lab, dur, zoom in ((0, "av", a_info["duration"], a_z), (1, "bv", b_duration, b_z)):
+        trim = f"trim=duration={esc_num(dur)}," if idx == 1 else ""
+        v_graph.append(
+            f"[{idx}:v]{trim}scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={W}:{H},fps=<PROJECT_VALUE>,setsar=1,"
+            f"zoompan=z=<PROJECT_ZOOM_CURVE>:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps=<PROJECT_VALUE>,"
+            f"settb=AVTB,setpts=PTS-STARTPTS[{lab}]"
+        )
+    if orientation == "vertical":
+        v_graph.append(
+            f"[2:v]scale={W}:{H}:force_original_aspect_ratio=increase:flags=lanczos,crop={W}:{H},fps=<PROJECT_VALUE>,setsar=1,"
+            f"zoompan=z=<PROJECT_ZOOM_CURVE>:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={W}x{H}:fps=<PROJECT_VALUE>,"
+            f"settb=AVTB,setpts=PTS-STARTPTS[cv]"
+        )
+        v_graph.append(f"[av][bv]xfade=transition=fade:duration={TRANS}:offset={A_START}[abraw]")
+        edge_blur(v_graph, "ab", "abraw", W, H, A_START, TRANS, "ab")
+        v_graph.append(f"[ab][cv]xfade=transition=fade:duration={TRANS}:offset={esc_num(c_offset)}[finalraw]")
+        edge_blur(v_graph, "bc", "finalraw", W, H, c_offset, TRANS, "v")
+        vmap = "[v]"
+    else:
+        card_w, card_h, x, y = PROJECT_NUMBER, PROJECT_NUMBER, PROJECT_NUMBER, 0
+        v_graph.append(
+            f"[2:v]scale={card_w}:{card_h}:force_original_aspect_ratio=decrease:flags=lanczos,"
+            f"pad={card_w}:{card_h}:(ow-iw)/2:(oh-ih)/2,fps=<PROJECT_VALUE>,setsar=1,"
+            f"zoompan=z=<PROJECT_ZOOM_CURVE>:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={card_w}x{card_h}:fps=<PROJECT_VALUE>,"
+            f"settb=AVTB,setpts=PTS-STARTPTS[cv]"
+        )
+        v_graph.append(f"[av][bv]xfade=transition=fade:duration={TRANS}:offset={A_START}[abraw]")
+        edge_blur(v_graph, "ab", "abraw", W, H, A_START, TRANS, "ab")
+        frame_dur = a_info["duration"] + b_duration - TRANS + PROJECT_NUMBER
+        v_graph.append(
+            f"[3:v]scale={card_w}:{card_h}:flags=lanczos,format=rgba,fps=<PROJECT_VALUE>,trim=duration={esc_num(frame_dur)},"
+            f"settb=AVTB,setpts=PTS-STARTPTS[frame];"
+            f"[ab]scale=<PROJECT_GEOMETRY>:flags=lanczos,setsar=1[content];"
+            '<PROJECT_VALUE>'
+        )
+        v_graph.append(f"[card][cv]xfade=transition=fade:duration={TRANS}:offset={esc_num(c_offset)}[finalraw]")
+        edge_blur(v_graph, "bc", "finalraw", card_w, card_h, c_offset, TRANS, "v")
+        vmap = "[v]"
+
+
+
+    audio = [
+        f"[0:a]aresample=48000,atrim=0:{esc_num(a_info['duration'])},asetpts=PTS-STARTPTS[aa]",
+        f"[1:a]aresample=48000,atrim=0:{esc_num(b_duration)},asetpts=PTS-STARTPTS,"
+        f"afade=t=in:st=<PROJECT_VALUE>:d={TRANS},afade=t=out:st={esc_num(max(0,b_duration-TRANS))}:d={TRANS},"
+        f"adelay={round(A_START*1000)}|{round(A_START*1000)}[ba]",
+        f"[2:a]aresample=48000,atrim=0:{esc_num(tail_info['duration'])},asetpts=PTS-STARTPTS,"
+        f"afade=t=in:st=<PROJECT_VALUE>:d={TRANS},adelay={round(c_offset*1000)}|{round(c_offset*1000)}[ca]",
+        "[aa][ba][ca]amix=inputs=3:duration=longest:dropout_transition=0:normalize=0,alimiter=limit=<PROJECT_VALUE>[a]",
+    ]
+    fc = ";".join(v_graph + audio)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    cmd = ["ffmpeg", "-hide_banner", "-y", "-i", str(A), "-i", str(b), "-i", str(tail)]
+    if orientation == "horizontal":
+        cmd.extend(["-loop", "1", "-framerate", "30", "-i", str(CARD)])
+    cmd += [
+        "-filter_complex", fc, "-map", vmap, "-map", "[a]", "-c:v", "libx264", "-preset", "fast",
+        "-crf", "20", "-pix_fmt", '<PROJECT_VALUE>', "-r", "30", "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart", "-shortest", str(output),
+    ]
+
+    subprocess.run(cmd, check=True)
+    return {
+        "b_file": b.name,
+        "b_cut_seconds": round(b_duration, 3),
+        "old_endcard_detected": b_cut is not None,
+        "transition_a_to_b_start": A_START,
+        "transition_b_to_c_start": round(c_offset, 3),
+        "orientation": orientation,
+        "output": str(output),
+        "probe": probe(output),
+    }
+
+
+def main():
+    if OUT.exists():
+        raise FileExistsError(f"Output folder already exists; refusing to overwrite: {OUT}")
+    if not A.exists() or not CARD.exists() or not TAIL_V.exists() or not TAIL_H.exists():
+        raise FileNotFoundError("A, card frame, or required experience tail is missing")
+    a_info = probe(A)
+    b_files = sorted(B_ROOT.glob("*.mp4"), key=lambda p: p.name.casefold())
+    if len(b_files) != PROJECT_NUMBER:
+        raise RuntimeError(f"Expected 12 B files, found {len(b_files)}")
+    for b in b_files:
+        if b.name not in CUTS:
+            raise RuntimeError(f"No tail-review decision recorded for: {b.name}")
+        b_info = probe(b)
+        if b_info["height"] <= b_info["width"]:
+            raise RuntimeError(f"B is not visually/technically portrait: {b.name}: {b_info}")
+    OUT.mkdir(parents=True)
+    results = []
+    for b in b_files:
+        b_info = probe(b)
+        short = get_bname(b)
+        cut = CUTS[b.name]
+        for orientation, tail, size in (("vertical", TAIL_V, "PROJECT_SIZE"), ("horizontal", TAIL_H, "PROJECT_SIZE")):
+            out = OUT / ('<PROJECT_VALUE>' if orientation == "vertical" else '<PROJECT_VALUE>') / '<PROJECT_VALUE>'
+            results.append(render_one(b, cut, a_info, b_info, tail, orientation, out))
+            print(f"DONE {len(results)}/24: {out}", flush=True)
+    manifest = {
+        "batch": '<PROJECT_VALUE>',
+        "a_file": str(A),
+        "a_to_b_transition_start": A_START,
+        "transition_seconds": TRANS,
+        "effect": "approved push-in; 4% scale change; edge radial blur sigma 6; audio overlap preserved",
+        "b_review": "Each B tail reviewed; only visible old CTA/endboard segments cut. Other clips have no old tail detected and remain full length.",
+        "count": len(results),
+        "results": results,
+    }
+    (OUT / "render_manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(json.dumps({"count": len(results), "output_root": str(OUT)}, ensure_ascii=False), flush=True)
+
+
+if __name__ == "__main__":
+    main()

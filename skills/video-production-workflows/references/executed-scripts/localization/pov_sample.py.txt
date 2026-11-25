@@ -1,0 +1,94 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import re, subprocess as sp
+from pathlib import Path
+from asset_local_full import BASE, PACK, SIZES, WORK, stamp, ff, probe, run, silence, SAMPLE
+
+ROOT=BASE/'<PROJECT_VALUE>'
+OUT=ROOT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+SRC=next((ROOT/'<PROJECT_VALUE>').glob('<PROJECT_VALUE>'))
+SIZE='PROJECT_SIZE'
+TAIL=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+CARD=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+BGM=ROOT/'BGM'/'bgm.mp3'
+VO=SAMPLE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+
+def srt_cues(path):
+    def parse(t):
+        a,b,c=t.replace(',','.').split(':')
+        return int(a)*PROJECT_NUMBER+int(b)*PROJECT_NUMBER+float(c)
+    return [(parse(l[1].split()[0]),parse(l[1].split()[2]),l[2]) for l in (s.splitlines() for s in path.read_text(encoding='utf-8-sig').strip().split('\n\n'))]
+
+ASS_HEADER='<PROJECT_VALUE>'
+
+
+
+CN=PROJECT_INPUT['CN']
+
+def rounded_plate(width,height=PROJECT_NUMBER):
+    x=PROJECT_NUMBER-width//2
+    w,h,r=width,height,PROJECT_NUMBER
+    return (r'{\an7\pos('+f'{x},{1095-h//2}'+r')\bord0\shad0\1c<PROJECT_COLOUR>\p1}'
+            f'm {r} 0 l {w-r} 0 b {w-5} 0 {w} 5 {w} {r} l {w} {h-r} '
+            f'b {w} {h-5} {w-5} {h} {w-r} {h} l {r} {h} b 5 {h} 0 {h-5} 0 {h-r} '
+            f'l 0 {r} b 0 5 5 0 {r} 0'+r'{\p0}')
+
+def glyph_widths(cues):
+    p=WORK/'asset_pov_en_width_measure.ass'
+    p.write_text(ASS_HEADER+''.join(
+        f'Dialogue: 0,{stamp(i,True)},{stamp(i+1,True)},Default,,0,0,0,,'
+        +r'{\an5\pos(538,1095)\1c<PROJECT_COLOUR>\3c<PROJECT_COLOUR>}'+t+'\n'
+        for i,(_,_,t) in enumerate(cues)),encoding='utf-8-sig')
+    r=run(['ffmpeg','-hide_banner','-f','lavfi','-i',f'color=black:s=PROJECT_SIZE:r=1:d={len(cues)}','-vf',f'ass=work/{p.name},bbox=min_val=200','-f','null','NUL'],capture_output=True,text=True,encoding='utf-8',errors='replace').stderr
+    widths=[int(m[1]) for m in re.finditer('<PROJECT_VALUE>',r)]
+    assert len(widths)==len(cues),widths
+    return widths
+
+def main():
+    OUT.mkdir(parents=True,exist_ok=True)
+    body=float(probe(SRC)['streams'][0]['duration'])
+    speed=PROJECT_INPUT['speed']
+    voice=OUT/'<PROJECT_VALUE>'
+    if not voice.exists():ff('-i',VO,'-af',f'atempo={speed:.9f}','-c:a','pcm_s24le',voice)
+    length=float(probe(voice)['format']['duration'])
+    end=next((a for a,b in reversed(silence(voice)) if abs(length-b)<PROJECT_NUMBER),length)
+    assert PROJECT_NUMBER< body-end < PROJECT_NUMBER,(body,end)
+    cues=[(a/speed,b/speed,t) for a,b,t in srt_cues(SAMPLE/'<PROJECT_VALUE>'/'PROJECT_LANGUAGE.srt')]
+
+    cues=[(a,cues[i+1][0] if i+1<len(cues) else end,t) for i,(a,b,t) in enumerate(cues)]
+    (OUT/'<PROJECT_VALUE>').write_text(''.join(f'{i}\n{stamp(a)} --> {stamp(b)}\n{t}\n\n' for i,(a,b,t) in enumerate(cues,1)),encoding='utf-8-sig')
+    ass=WORK/'asset_pov_grass_EN_white_black.ass'
+    widths=glyph_widths(cues)
+    events=[]
+    plates=[]
+    for (a,b,t),glyph in zip(cues,widths):
+        guard=max((width for left,right,width in CN if a<right and b>left),default=0)
+        width=2*round(max(PROJECT_NUMBER,glyph+PROJECT_NUMBER,guard*PROJECT_NUMBER/PROJECT_NUMBER+PROJECT_NUMBER)/2)
+        assert width<=PROJECT_NUMBER,(t,glyph,width)
+        plates.append(width)
+        events.append(f'Dialogue: 0,{stamp(a,True)},{stamp(b,True)},Default,,0,0,0,,{rounded_plate(width)}\n')
+        events.append('<PROJECT_VALUE>')
+    print('PLATE_WIDTHS',plates,flush=True)
+    ass.write_text(ASS_HEADER+''.join(events),encoding='utf-8-sig')
+    fc=(f'[0:v]fps=<PROJECT_VALUE>,scale=<PROJECT_GEOMETRY>:flags=lanczos,setsar=1,format=rgb24,pad=<PROJECT_GEOMETRY>:color=black[fg];'
+        '<PROJECT_VALUE>'
+        '<PROJECT_VALUE>'
+        '[body][tail]concat=n=2:v=1:a=0[v];'
+        f'[3:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=<PROJECT_VALUE>dB,atrim=duration={body:.6f},afade=t=in:d=0.09,afade=t=out:st={body-.28:.6f}:d=0.28[bed];'
+        f'[4:a]aformat=sample_rates=48000:channel_layouts=stereo,highpass=f=85,equalizer=f=250:t=o:w=1.4:g=<PROJECT_VALUE>,equalizer=f=3000:t=o:w=1.5:g=<PROJECT_VALUE>,volume=<PROJECT_VALUE>dB,apad,atrim=duration={body:.6f}[voice];'
+        '[bed][voice]amix=inputs=2:normalize=0,volume=<PROJECT_VALUE>dB,alimiter=limit=<PROJECT_VALUE>:level=0:latency=1[mix];'
+        '[1:a]aformat=sample_rates=48000:channel_layouts=stereo,alimiter=limit=<PROJECT_VALUE>:level=0:latency=1,afade=t=in:d=0.06[cta];'
+        '[mix][cta]concat=n=2:v=0:a=1[a]')
+    dest=OUT/'<PROJECT_VALUE>'
+    if not dest.exists():
+        tmp=WORK/'asset_pov_grass_en1350_white_black.mp4'
+        ff('-threads',2,'-i',SRC,'-threads',1,'-i',TAIL,'-i',CARD,'-i',BGM,'-i',voice,'-filter_complex_threads',2,'-filter_complex',fc,'-map','[v]','-map','[a]','-c:v','libx264','-threads',6,'-preset','fast','-crf',PROJECT_NUMBER,'-pix_fmt','<PROJECT_VALUE>','-c:a','aac','-b:a','320k','-movflags','+faststart',tmp)
+        import shutil
+        with tmp.open('rb') as a,dest.open('xb') as b:shutil.copyfileobj(a,b)
+    print('SAMPLE',dest,'BODY',body,'VOICE_END',end,'GAP',body-end,flush=True)
+
+if __name__=='__main__':main()

@@ -1,0 +1,32 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+$ErrorActionPreference = 'Stop'
+$ffmpeg = (Get-Command ffmpeg).Source
+$source = '<PROJECT_VALUE>'
+$tail = '<PROJECT_VALUE>'
+$logo = '<PROJECT_VALUE>'
+$outDir = Join-Path $env:TEMP 'push_rework'
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+$out = Join-Path $outDir 'sample-asset-cn-PROJECT_SIZE.mp4'
+$ad = [double](& ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 $source)
+$td = [double](& ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 $tail)
+$dur = $ProjectValue
+$off = [Math]::Round($ad - $dur, 3)
+$total = [Math]::Round($ad + $td - $dur, 3)
+$filter = @"
+[0:v]setpts=PTS-STARTPTS,fps=<PROJECT_NUMBER>,scale=<PROJECT_GEOMETRY>:force_original_aspect_ratio=increase,crop=<PROJECT_GEOMETRY>,gblur=sigma=<PROJECT_VALUE>[bg];
+[0:v]setpts=PTS-STARTPTS,fps=<PROJECT_NUMBER>,scale=<PROJECT_GEOMETRY>:force_original_aspect_ratio=decrease[fg];
+[bg][fg]overlay=(W-w)/2:(H-h)/2:shortest=<PROJECT_VALUE>[comp];
+[2:v]scale=<PROJECT_NUMBER>:-1[logo];
+[comp][logo]overlay=<PROJECT_GEOMETRY>:shortest=<PROJECT_VALUE>,setsar=1,settb=AVTB[a];
+[1:v]setpts=PTS-STARTPTS,fps=<PROJECT_NUMBER>,scale=<PROJECT_GEOMETRY>,setsar=1,settb=AVTB[b];
+[a][b]xfade=transition=zoomin:duration=${dur}:offset=${off}[x];
+[x]gblur=sigma=<PROJECT_VALUE>:enable='between(t,${off},${ad})'[v];
+[0:a]asetpts=PTS-STARTPTS[a0];[1:a]asetpts=PTS-STARTPTS[a1];[a0][a1]acrossfade=d=${dur}:c1=tri:c2=tri[aout]
+"@
+& $ffmpeg -y -hide_banner -i $source -i $tail -loop 1 -framerate <PROJECT_NUMBER> -i $logo -filter_complex $filter -map '[v]' -map '[aout]' -c:v libx264 -preset veryfast -crf <PROJECT_NUMBER> -pix_fmt yuv420p -r <PROJECT_NUMBER> -c:a aac -b:a 192k -movflags +faststart $out
+Write-Output "OUT=$out A=$ad OFFSET=$off"

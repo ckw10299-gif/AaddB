@@ -1,0 +1,67 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import hashlib, os, shutil, sys
+from concurrent.futures import ThreadPoolExecutor
+from PIL import Image, ImageDraw, ImageChops, ImageStat
+from asset_local_cjk_large import OUT,WORK,STAGE,BACK,SIZES,LANGS,cues_for
+from asset_local_full import probe,run
+from asset_local_qc import frame
+
+def aud_hash(p):
+    return run(['ffmpeg','-v','error','-i',p,'-map','0:a:0','-c:a','copy','-hash','sha256','-f','hash','pipe:1'],capture_output=True).stdout
+
+def verify(lang,size):
+    name='<PROJECT_VALUE>'
+    old=OUT/'<PROJECT_VALUE>'/name
+    new=STAGE/'<PROJECT_VALUE>'/name
+    info,ref=probe(new),probe(old)
+    v,a=info['streams']
+    w,h=map(int,size.split('x'))
+    assert (v['width'],v['height'],v['r_frame_rate'],v['codec_name'],a['codec_name'])==(w,h,'30/1','h264','aac')
+    assert abs(float(v['duration'])-float(ref['streams'][0]['duration']))<PROJECT_NUMBER
+    assert a['duration_ts']==ref['streams'][1]['duration_ts'] and aud_hash(new)==aud_hash(old)
+    run(['ffmpeg','-v','error','-xerror','-threads',3,'-i',new,'-f','null','NUL'],capture_output=True)
+    oldtail=frame(old,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER); newtail=frame(new,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER)
+    assert max(ImageStat.Stat(ImageChops.difference(oldtail,newtail)).mean)<2
+
+    t0,t1,_=max(cues_for(lang),key=lambda c:len(c[2]))
+    t=(t0+t1)/2
+    ow=PROJECT_NUMBER if w>h else PROJECT_NUMBER
+    oh=round(ow*h/w)
+    return old,new,frame(old,t,ow,oh),frame(new,t,ow,oh)
+
+if __name__=='__main__':
+    if '--publish' in sys.argv:
+        assert (WORK/'asset_cjk_fit_qc.txt').exists()
+        moves=[]
+        for lang in LANGS:
+            for sub,names in [('<PROJECT_VALUE>',['<PROJECT_VALUE>' for s in SIZES]),('<PROJECT_VALUE>',['<PROJECT_VALUE>'])]:
+                for name in names:
+                    a,b,c=OUT/sub/name, STAGE/sub/name, BACK/sub/name
+                    assert a.is_file() and b.is_file() and not c.exists()
+                    moves.append((a,b,c))
+        for a,b,c in moves:
+            c.parent.mkdir(parents=True,exist_ok=True)
+            with a.open('rb') as i,c.open('xb') as o:shutil.copyfileobj(i,o)
+            assert c.stat().st_size==a.stat().st_size
+        for a,b,c in moves:os.replace(b,a)
+        result=OUT/'<PROJECT_VALUE>'
+        with result.open('x',encoding='utf-8-sig') as f:f.write((WORK/'asset_cjk_fit_qc.txt').read_text(encoding='utf-8'))
+        print('PUBLISHED',OUT,flush=True)
+    else:
+        ids=[(l,s) for l in LANGS for s in SIZES]
+        with ThreadPoolExecutor(max_workers=4) as ex:rows=list(ex.map(lambda j:verify(*j),ids))
+        for i,(lang,size) in enumerate(ids):
+            _,_,a,b=rows[i]
+            sheet=Image.new('RGB',(2*a.width+PROJECT_NUMBER,a.height+PROJECT_NUMBER),'#252525')
+            sheet.paste(a,(2,2)); sheet.paste(b,(a.width+PROJECT_NUMBER,2))
+            d=ImageDraw.Draw(sheet)
+            d.text((4,a.height+7),f'{lang} {size} - BEFORE',fill='white')
+            d.text((a.width+PROJECT_NUMBER,a.height+7),'AFTER',fill='white')
+            sheet.save(WORK/f'asset_cjk_{lang}_{size}_before_after.jpg',quality=PROJECT_NUMBER)
+        (WORK/'asset_cjk_fit_qc.txt').write_text('<PROJECT_VALUE>',encoding='utf-8')
+        print('QC PASS',len(rows),flush=True)

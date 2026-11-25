@@ -1,6 +1,6 @@
 # VoxCPM2 自动部署与配音
 
-官方源：[OpenBMB/VoxCPM](https://github.com/OpenBMB/VoxCPM)，[安装文档](https://voxcpm.readthedocs.io/en/latest/installation.html)，[启动与短句示例](https://voxcpm.readthedocs.io/en/latest/quickstart.html)。Python/PyTorch/GPU 兼容性以目标机器为准。用户当时的原始部署指令：“帮我把这个部署到本地：OpenBMB/VoxCPM”。
+官方源：[OpenBMB/VoxCPM](https://github.com/OpenBMB/VoxCPM)，[安装文档](https://voxcpm.readthedocs.io/en/latest/installation.html)，[启动与短句示例](https://voxcpm.readthedocs.io/en/latest/quickstart.html)。Python/PyTorch/GPU 兼容性以目标机器为准。
 
 ## 1. 优先复用
 
@@ -26,5 +26,5 @@ powershell -NoProfile -File .\scripts\install-voxcpm.ps1 -Device cpu
 
 - 页面能开或 HTTP 200 **不等于模型可用**。首次下载/加载可能较慢，查看下载日志和本地缓存进度，禁止重复提交。遇下载不完整，优先复用已验证快照或恢复官方下载，不删除旧模型。Windows 遇 torch.compile/Triton 故障，先用兼容模式验证推理；参考 [官方 FAQ](https://voxcpm.readthedocs.io/en/latest/faq.html)。
 - 使用 UI 的 Target Text 填最终广告台词；Control Instruction 填音色、音高、语言口音、语速、情绪。先跑一句试听，再跑全文。要固定声线用已确认且有权使用的参考 WAV；若用需要原文的克隆模式，填该录音真实念的原台词，不填目标台词。
-- 这批确认风格：清亮少年男声、像自然和朋友交谈、轻松自信带一点俏皮；繁中用台湾国语带笑意。没有确认原声时可先用文字设计试听，但不要把文字描述当作固定音色。
+- 声线、语言、语速与口音由当前项目提供，没有默认音色。没有确认原声时可先用文字设计试听，但不要把文字描述当作固定音色。
 - 四语可用本地 CLI/SDK 批量，或复用历史脚本的队列逻辑；不同版本的 Gradio 接口参数可能不同，先查实际 API，不硬套旧 `predict` 位置参数。保存声线参考、台词、参数、可播放 WAV，失败只重跑对应语言。试听目标语言、产品词、漏读和最后一句，再交给本地化流程做时间对齐。

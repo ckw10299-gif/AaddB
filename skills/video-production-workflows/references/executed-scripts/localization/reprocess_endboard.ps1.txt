@@ -1,0 +1,98 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+$ErrorActionPreference = 'Stop'
+$ffmpeg = (Get-Command ffmpeg).Source
+$ffprobe = (Get-Command ffprobe).Source
+$base = '<PROJECT_VALUE>'
+$batch = Join-Path $base '<PROJECT_VALUE>'
+$outRoot = Join-Path $batch '<PROJECT_VALUE>'
+$stage = Join-Path $batch '<PROJECT_VALUE>'
+$backup = Join-Path $batch '<PROJECT_VALUE>'
+$logPath = Join-Path $stage 'render.log'
+if (Test-Path -LiteralPath $stage) { throw "Staging exists: $stage" }
+New-Item -ItemType Directory -Path $stage | Out-Null
+New-Item -ItemType Directory -Path $backup | Out-Null
+
+$items = $ProjectInput
+$langs = $ProjectInput
+$files = @()
+foreach ($lang in $langs) {
+    $folder = Join-Path $outRoot $lang.Folder
+    $files += Get-ChildItem -LiteralPath $folder -File -Filter '*.mp4' | Where-Object { $_.Name -notlike '<PROJECT_VALUE>' }
+}
+if ($files.Count -ne <PROJECT_NUMBER>) { throw "Expected <PROJECT_NUMBER> non-short-leg categorized outputs; found $($files.Count)" }
+
+$index = 0
+foreach ($file in $files) {
+    $index++
+    $lang = $langs | Where-Object { $file.Directory.Name -eq $_.Folder } | Select-Object -First 1
+    $item = $items | Where-Object { $file.Name.StartsWith($_.Key + '_') } | Select-Object -First 1
+    if (-not $item) { throw "Cannot map source for $($file.FullName)" }
+    if ($file.Name -notmatch '(\d{3,4}x\d{3,4})') { throw "Cannot parse size from $($file.Name)" }
+    $size = $Matches[1]
+    $wh = $size.Split('x'); $w = [int]$wh[0]; $h = [int]$wh[1]
+    $master = Join-Path $batch $item.Master
+    $tail = Join-Path (Join-Path (Join-Path $base '<PROJECT_VALUE>') $lang.TailDir) ("{0} {1} {2}.mp4" -f $lang.TailDir,$lang.TailName,$size)
+    if (!(Test-Path -LiteralPath $tail)) { throw "Missing tailboard: $tail" }
+    $masterDuration = [double](& $ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 $master)
+    $tailDuration = [double](& $ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 $tail)
+    $offset = [Math]::Round($masterDuration - <PROJECT_NUMBER>, 3)
+    $total = [Math]::Round($offset + $tailDuration, 3)
+    $delay = [int][Math]::Round($offset * 1000)
+    $destDir = Join-Path $stage $lang.Folder
+    New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+    $staged = Join-Path $destDir $file.Name
+    $filter = '<PROJECT_VALUE>'
+    $ffArgs = @('-y','-hide_banner','-loglevel','error','-i',$file.FullName,'-i',$tail,'-i',$master,'-i',$tail,'-filter_complex',$filter,'-map','[v]','-map','[a]','-t',"$total",'-c:v','libx264','-preset','veryfast','-crf','<PROJECT_NUMBER>','-pix_fmt','<PROJECT_VALUE>','-r','<PROJECT_NUMBER>','-c:a','aac','-b:a','192k','-movflags','+faststart',$staged)
+    & $ffmpeg @ffArgs
+    if ($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $staged)) { throw "Render failed: $($file.Name)" }
+    Add-Content -LiteralPath $logPath -Value ("[{0}/<PROJECT_NUMBER>] {1} offset={2}s -> {3}" -f $index,$file.Name,$offset,$staged)
+}
+
+$stagedFiles = @(Get-ChildItem -LiteralPath $stage -Recurse -File -Filter '*.mp4')
+if ($stagedFiles.Count -ne <PROJECT_NUMBER>) { throw "Staged count mismatch: $($stagedFiles.Count)" }
+foreach ($file in $stagedFiles) {
+    if ($file.Name -notmatch '(\d{3,4})x(\d{3,4})') { throw "No dimension in staged name: $($file.Name)" }
+    $expectedW=[int]$Matches[1]; $expectedH=[int]$Matches[2]
+    $stream = & $ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0:s=x $file.FullName
+    if ($stream.Trim() -ne "$expectedW`x$expectedH") { throw "Dimension mismatch $($file.Name): $stream" }
+    $audio = & $ffprobe -v error -select_streams a:0 -show_entries stream=index -of csv=p=0 $file.FullName
+    if (!$audio) { throw "No audio in staged file: $($file.Name)" }
+    & $ffmpeg -hide_banner -loglevel error -i $file.FullName -f null NUL
+    if ($LASTEXITCODE -ne 0) { throw "Decode QA failed: $($file.Name)" }
+}
+
+$flatStage = Join-Path $stage '_flat'
+New-Item -ItemType Directory -Path $flatStage | Out-Null
+foreach ($file in $stagedFiles) {
+    $lang = $langs | Where-Object { $file.Directory.Name -eq $_.Folder } | Select-Object -First 1
+    $item = $items | Where-Object { $file.Name.StartsWith($_.Key + '_') } | Select-Object -First 1
+    [void]($file.Name -match '(\d{3,4}x\d{3,4})'); $size=$Matches[1]
+    if ($lang.IsCn) {
+        $flatName = '<PROJECT_VALUE>'
+    } else {
+        $flatName = '<PROJECT_VALUE>'
+    }
+    Copy-Item -LiteralPath $file.FullName -Destination (Join-Path $flatStage $flatName)
+}
+if (@(Get-ChildItem -LiteralPath $flatStage -File -Filter '*.mp4').Count -ne <PROJECT_NUMBER>) { throw 'Flat staging count mismatch' }
+
+foreach ($lang in $langs) {
+    $srcFolder = Join-Path $outRoot $lang.Folder
+    $backupFolder = Join-Path $backup $lang.Folder
+    New-Item -ItemType Directory -Force -Path $backupFolder | Out-Null
+    foreach ($newFile in Get-ChildItem -LiteralPath (Join-Path $stage $lang.Folder) -File -Filter '*.mp4') {
+        $oldFile = Join-Path $srcFolder $newFile.Name
+        if (Test-Path -LiteralPath $oldFile) { Move-Item -LiteralPath $oldFile -Destination (Join-Path $backupFolder $newFile.Name) }
+        Move-Item -LiteralPath $newFile.FullName -Destination $oldFile
+    }
+}
+foreach ($newFile in Get-ChildItem -LiteralPath $flatStage -File -Filter '*.mp4') {
+    Copy-Item -LiteralPath $newFile.FullName -Destination (Join-Path $outRoot $newFile.Name) -Force
+}
+Add-Content -LiteralPath $logPath -Value 'COMPLETE staged=<PROJECT_NUMBER> replaced=<PROJECT_NUMBER> flat=<PROJECT_NUMBER>; originals backed up.'
+Write-Output "COMPLETE: <PROJECT_NUMBER> categorized outputs and <PROJECT_NUMBER> flat aliases replaced. Backup: $backup"

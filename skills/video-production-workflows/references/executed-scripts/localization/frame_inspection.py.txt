@@ -1,0 +1,22 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+from pathlib import Path
+from PIL import Image, ImageDraw
+base=Path('<PROJECT_VALUE>')
+files=[(lang,p) for lang in '<PROJECT_VALUE>' for p in sorted((base/lang).glob('*.png'))]
+sheet=Image.new('RGB',(PROJECT_NUMBER,((len(files)+5)//6)*PROJECT_NUMBER),'#252525')
+d=ImageDraw.Draw(sheet)
+for i,(lang,p) in enumerate(files):
+    im=Image.open(p).convert('RGBA')
+    alpha=im.getchannel('A')
+    hole=alpha.point(lambda a:PROJECT_NUMBER if a<PROJECT_NUMBER else 0)
+    print(i,lang,p.name,im.size,hole.getbbox(),alpha.getpixel((im.width//2,im.height//2)),flush=True)
+    im.thumbnail((PROJECT_NUMBER,PROJECT_NUMBER))
+    x=i%6*PROJECT_NUMBER; y=i//6*PROJECT_NUMBER
+    sheet.paste(im,(x+(PROJECT_NUMBER-im.width)//2,y),im)
+    d.text((x+8,y+PROJECT_NUMBER),str(i),fill='white')
+sheet.save('work/asset_frame_inspection.jpg',quality=PROJECT_NUMBER)

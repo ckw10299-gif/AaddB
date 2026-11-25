@@ -1,0 +1,169 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import argparse
+import json
+import subprocess
+from pathlib import Path
+
+ROOT = Path('<PROJECT_VALUE>')
+OUT = ROOT / '<PROJECT_VALUE>'
+TEMP_OUT = OUT / '<PROJECT_VALUE>'
+TAIL_ROOT = Path('<PROJECT_VALUE>')
+A = ROOT / '<PROJECT_VALUE>' / '<PROJECT_VALUE>'
+LANGS = PROJECT_INPUT['LANGS']
+SIZES = PROJECT_INPUT['SIZES']
+D = PROJECT_INPUT['D']
+ZOOM = PROJECT_INPUT['ZOOM']
+
+
+def probe(path):
+    raw = subprocess.check_output(
+        ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", str(path)],
+        text=True, encoding="utf-8"
+    )
+    return json.loads(raw)
+
+
+def canvas_filter(index, w, h, label, native):
+    if native:
+        return '<PROJECT_VALUE>'
+    return (
+        f"[{index}:v]fps=<PROJECT_VALUE>,split=2[{label}fg0][{label}bg0];"
+        f"[{label}bg0]scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos,"
+        f"crop={w}:{h},gblur=sigma=<PROJECT_VALUE>[{label}bg];"
+        f"[{label}fg0]scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos[{label}fg];"
+        '<PROJECT_VALUE>'
+    )
+
+
+def zoom_filter(label, outlabel, w, h, first=False, end_start=None):
+    z = []
+    if first:
+        z.append(f"if(lte(on,{ZOOM}),1.12-0.12*on/{ZOOM},1)")
+    elif end_start is not None:
+        z.append(f"if(gte(on,{end_start}),min(1.12,1+0.12*(on-{end_start})/{ZOOM}),1)")
+    else:
+        return f"[{label}]setpts=PTS-STARTPTS[{outlabel}]"
+    expr = z[0]
+    if first and end_start is not None:
+        expr = (
+            f"if(lte(on,{ZOOM}),1.12-0.12*on/{ZOOM},"
+            f"if(gte(on,{end_start}),min(1.12,1+0.12*(on-{end_start})/{ZOOM}),1))"
+        )
+
+    return (
+        f"[{label}]zoompan=z=<PROJECT_ZOOM_CURVE>:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+        f"d=1:s={w}x{h}:fps=<PROJECT_VALUE>,setsar=1,setpts=PTS-STARTPTS[{outlabel}]"
+    )
+
+
+def radial_blur_segment(label, outlabel, w, h, suffix):
+    mask = f"mask{suffix}"
+    sharp, soft, blurred = f"sharp{suffix}", f"soft{suffix}", f"blurred{suffix}"
+    return (
+        '<PROJECT_VALUE>'
+        f"geq=lum='255*(1-min(1,pow(hypot(X-W/2,Y-H/2)/hypot(W/2,H/2),1.7)))':cb=128:cr=128[{mask}];"
+        '<PROJECT_VALUE>'
+        f"[{soft}]gblur=sigma=<PROJECT_VALUE>[{blurred}];"
+        '<PROJECT_VALUE>'
+    )
+
+
+def render(lang, title, b_path, tail_start, tail_lang, w, h, native):
+    out_dir = TEMP_OUT / lang
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out = out_dir / '<PROJECT_VALUE>'
+    b_info = probe(b_path)
+    b_v = next(s for s in b_info["streams"] if s["codec_type"] == "video")
+    b_duration = float(b_v["duration"])
+    a_info = probe(A)
+    a_duration = float(next(s for s in a_info["streams"] if s["codec_type"] == "video")["duration"])
+    a_offset = a_duration - D
+
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(A), "-i", str(b_path)]
+    if not native:
+        tail = TAIL_ROOT / tail_lang / '<PROJECT_VALUE>'
+        if not tail.is_file():
+            raise FileNotFoundError(tail)
+        cmd += ["-i", str(tail)]
+
+    fc = [canvas_filter(0, w, h, "a0", native)]
+    fc.append(zoom_filter("a0", "av", w, h, end_start=round(a_offset * PROJECT_NUMBER)))
+    if native:
+        fc.append(canvas_filter(1, w, h, "b0", True))
+        fc.append(zoom_filter("b0", "bv", w, h, first=True))
+        fc.append(f"[av][bv]xfade=transition=fade:duration={D}:offset={a_offset:.6f}[ab]")
+        fc.append(f"[ab]split=3[s0][s1][s2]")
+        fc.append(f"[s0]trim=0:{a_offset:.6f},setpts=PTS-STARTPTS[p0]")
+        fc.append(f"[s1]trim={a_offset:.6f}:{a_offset+D:.6f},setpts=PTS-STARTPTS[m1]")
+        fc.append(f"[s2]trim=start={a_offset+D:.6f},setpts=PTS-STARTPTS[p1]")
+        fc.append(radial_blur_segment("m1", "r1", w, h, "1"))
+        fc.append("[p0][r1][p1]concat=n=3:v=1:a=0[vout]")
+        fc.append(
+            f"[0:a]aresample=48000,asetpts=PTS-STARTPTS[aa];"
+            f"[1:a]aresample=48000,asetpts=PTS-STARTPTS,afade=t=in:st=<PROJECT_VALUE>:d={D},"
+            f"adelay={round(a_offset*1000)}|{round(a_offset*1000)}[ba];"
+            "[aa][ba]amix=inputs=2:duration=longest:dropout_transition=0:normalize=0[aout]"
+        )
+    else:
+        fc.append(
+            f"[1:v]trim=0:{tail_start:.6f},setpts=PTS-STARTPTS,fps=<PROJECT_VALUE>,split=2[bfg0][bbg0];"
+            f"[bbg0]scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos,"
+            f"crop={w}:{h},gblur=sigma=<PROJECT_VALUE>[bbg];"
+            f"[bfg0]scale={w}:{h}:force_original_aspect_ratio=decrease:flags=lanczos[bfg];"
+            '<PROJECT_VALUE>'
+        )
+        b_end_start = round((tail_start - D) * PROJECT_NUMBER)
+        fc.append(zoom_filter("b0", "bv", w, h, first=True, end_start=b_end_start))
+        fc.append('<PROJECT_VALUE>')
+        fc.append(zoom_filter("c0", "cv", w, h, first=True))
+        fc.append(f"[av][bv]xfade=transition=fade:duration={D}:offset={a_offset:.6f}[ab]")
+        c_offset = a_offset + tail_start - D
+        fc.append(f"[ab][cv]xfade=transition=fade:duration={D}:offset={c_offset:.6f}[abc]")
+        t1_end, t2_end = a_offset + D, c_offset + D
+        fc.append("[abc]split=5[s0][s1][s2][s3][s4]")
+        fc.append(f"[s0]trim=0:{a_offset:.6f},setpts=PTS-STARTPTS[p0]")
+        fc.append(f"[s1]trim={a_offset:.6f}:{t1_end:.6f},setpts=PTS-STARTPTS[m1]")
+        fc.append(f"[s2]trim={t1_end:.6f}:{c_offset:.6f},setpts=PTS-STARTPTS[p1]")
+        fc.append(f"[s3]trim={c_offset:.6f}:{t2_end:.6f},setpts=PTS-STARTPTS[m2]")
+        fc.append(f"[s4]trim=start={t2_end:.6f},setpts=PTS-STARTPTS[p2]")
+        fc.append(radial_blur_segment("m1", "r1", w, h, "1"))
+        fc.append(radial_blur_segment("m2", "r2", w, h, "2"))
+        fc.append("[p0][r1][p1][r2][p2]concat=n=5:v=1:a=0[vout]")
+        fc.append(
+            f"[0:a]aresample=48000,asetpts=PTS-STARTPTS[aa];"
+            f"[1:a]aresample=48000,atrim=0:{tail_start:.6f},asetpts=PTS-STARTPTS,"
+            f"afade=t=in:st=<PROJECT_VALUE>:d={D},afade=t=out:st={max(0,tail_start-D):.6f}:d={D},"
+            f"adelay={round(a_offset*1000)}|{round(a_offset*1000)}[ba];"
+            f"[2:a]aresample=48000,asetpts=PTS-STARTPTS,afade=t=in:st=<PROJECT_VALUE>:d={D},"
+            f"adelay={round(c_offset*1000)}|{round(c_offset*1000)}[ca];"
+            "[aa][ba][ca]amix=inputs=3:duration=longest:dropout_transition=0:normalize=0[aout]"
+        )
+
+    cmd += [
+        "-filter_complex", ";".join(fc), "-map", "[vout]", "-map", "[aout]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "19", "-pix_fmt", '<PROJECT_VALUE>',
+        "-r", "30", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)
+    ]
+    print(f"RENDER {lang} {w}x{h}", flush=True)
+    subprocess.run(cmd, check=True)
+    print(f"DONE {out}", flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--preview-only", action="store_true")
+    args = parser.parse_args()
+    for lang, title, b_path, tail_start, tail_lang in LANGS:
+        for w, h in SIZES:
+            if args.preview_only and (lang, w, h) != ('<PROJECT_VALUE>', PROJECT_NUMBER, PROJECT_NUMBER):
+                continue
+            render(lang, title, b_path, tail_start, tail_lang, w, h, (w, h) == (PROJECT_NUMBER, PROJECT_NUMBER))
+
+
+if __name__ == "__main__":
+    main()

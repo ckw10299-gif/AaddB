@@ -1,0 +1,71 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from PIL import ImageChops,ImageStat
+from asset_local_full import BASE, WORK, ff, probe, run
+from asset_local_qc import frame
+from asset_pov_batch import media
+
+OUT=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+CARD=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+TAILS=PROJECT_INPUT['TAILS']
+SOURCES=PROJECT_INPUT['SOURCES']
+
+def diff(a,b): return max(ImageStat.Stat(ImageChops.difference(a,b)).mean)
+
+def create(code,title,src,size):
+    w,h=map(int,size.split('x'))
+    tail=TAILS/'<PROJECT_VALUE>'
+    s=probe(src)
+    sv,sa=s['streams']
+    assert (sv['width'],sv['height'],sv['r_frame_rate'],sa['codec_type'])==(PROJECT_NUMBER,PROJECT_NUMBER,'30/1','audio')
+    tv,ta=probe(tail)['streams']
+    assert (tv['width'],tv['height'],ta['codec_type'])==(w,h,'audio')
+    length=int(sv['nb_frames'])/PROJECT_NUMBER
+    name='<PROJECT_VALUE>'
+    dest=OUT/name
+    tmp=OUT/(name+'.part.mp4')
+    if w==PROJECT_NUMBER:
+        vf=('[0:v]fps=<PROJECT_VALUE>,scale=<PROJECT_GEOMETRY>:flags=lanczos,setsar=1,format=rgb24,pad=<PROJECT_GEOMETRY>[canvas];'
+            '<PROJECT_VALUE>')
+    else:
+        vf='<PROJECT_VALUE>'
+    tail_len=int(tv['nb_frames'])/PROJECT_NUMBER
+    fc=(vf+'<PROJECT_VALUE>'
+          '[body][tail]concat=n=2:v=1:a=0[v];'
+          f'[0:a]aformat=sample_rates=48000:channel_layouts=stereo,apad,atrim=duration={length:.8f},asetpts=PTS-STARTPTS[a0];'
+          f'[1:a]aformat=sample_rates=48000:channel_layouts=stereo,apad,atrim=duration={tail_len:.8f},asetpts=PTS-STARTPTS[a1];'
+          '[a0][a1]concat=n=2:v=0:a=1[a]')
+    if not dest.exists() and not tmp.exists():
+        args=['-threads',2,'-i',src,'-threads',1,'-i',tail]
+        if w==PROJECT_NUMBER:args+=['-threads',1,'-i',CARD]
+        ff(*args,'-filter_complex_threads',2,'-filter_complex',fc,'-map','[v]','-map','[a]',
+           '-c:v','libx264','-threads',4,'-preset','fast','-crf',PROJECT_NUMBER,'-pix_fmt','<PROJECT_VALUE>','-c:a','aac','-b:a','320k','-movflags','+faststart',tmp)
+    p=dest if dest.exists() else tmp
+    v,a=probe(p)['streams']
+    assert (v['width'],v['height'],v['r_frame_rate'],v['codec_name'],a['codec_name'])==(w,h,'30/1','h264','aac'),name
+    assert int(v['nb_frames'])==int(sv['nb_frames'])+int(tv['nb_frames']),name
+    assert abs(float(a['duration'])-(length+tail_len))<PROJECT_NUMBER,name
+    run(['ffmpeg','-v','error','-xerror','-threads',2,'-i',p,'-f','null','NUL'],capture_output=True)
+    for t in (PROJECT_NUMBER,PROJECT_NUMBER):
+        assert diff(frame(p,length+t,PROJECT_NUMBER,PROJECT_NUMBER),frame(tail,t,PROJECT_NUMBER,PROJECT_NUMBER))<5,(code,size,t)
+    for t in (PROJECT_NUMBER,PROJECT_NUMBER,length-PROJECT_NUMBER):
+        crop='crop=608:1080:656:0,' if w==PROJECT_NUMBER else ''
+        assert diff(frame(src,t,PROJECT_NUMBER,PROJECT_NUMBER),frame(p,t,PROJECT_NUMBER,PROJECT_NUMBER,crop))<4,(code,size,t)
+    frame(p,PROJECT_NUMBER,PROJECT_NUMBER if w==PROJECT_NUMBER else PROJECT_NUMBER,PROJECT_NUMBER if w==PROJECT_NUMBER else PROJECT_NUMBER).save(WORK/f'asset_cn_{code}_{size}_qc.png')
+    if p==tmp:tmp.rename(dest)
+    print('PASS',name,flush=True)
+    return name
+
+if __name__=='__main__':
+    OUT.mkdir(exist_ok=True)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        jobs=[pool.submit(create,*source,size) for source in SOURCES for size in ('PROJECT_SIZE','PROJECT_SIZE')]
+        expected={f.result() for f in as_completed(jobs)}
+    assert len(expected)==8 and {p.name for p in OUT.glob('*.mp4')}==expected
+    print('DELIVERED',len(expected),OUT,flush=True)

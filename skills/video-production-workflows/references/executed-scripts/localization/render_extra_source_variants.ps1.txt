@@ -1,0 +1,64 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+$ErrorActionPreference = 'Stop'
+$base = '<PROJECT_VALUE>'
+$sourceDir = Join-Path $base '<PROJECT_VALUE>'
+$outRoot = Join-Path $sourceDir '<PROJECT_VALUE>'
+$src = Join-Path $sourceDir '<PROJECT_VALUE>'
+$ffmpeg = (Get-Command ffmpeg).Source
+$ffprobe = (Get-Command ffprobe).Source
+if (!(Test-Path -LiteralPath $src -PathType Leaf)) { throw "Missing source: $src" }
+$info = & $ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 $src
+$sw,$sh = $info -split 'x' | ForEach-Object { [int]$_ }
+if ($sw -ne <PROJECT_NUMBER> -or $sh -ne 1280) { throw "Unexpected source dimensions: $info" }
+$duration = [double](& $ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 $src)
+$offset = ($duration - <PROJECT_NUMBER>).ToString('<PROJECT_NUMBER>', [Globalization.CultureInfo]::InvariantCulture)
+
+$configs = $ProjectInput
+
+$total = $ProjectValue
+$done = 0
+foreach ($cfg in $configs) {
+    if (!(Test-Path -LiteralPath $cfg.Logo -PathType Leaf)) { throw "Missing logo: $($cfg.Logo)" }
+    $langDir = Join-Path $outRoot $cfg.Folder
+    New-Item -ItemType Directory -Path $langDir -Force | Out-Null
+    foreach ($dim in $cfg.Dims) {
+        $w=[int]$dim[0]; $h=[int]$dim[1]
+        $tail = Join-Path (Join-Path $base '<PROJECT_VALUE>') (Join-Path $cfg.TailFolder ("{0} {1}x{2}.mp4" -f $cfg.TailPattern,$w,$h))
+        if (!(Test-Path -LiteralPath $tail -PathType Leaf)) { throw "Missing tailboard: $tail" }
+        $size=& $ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 $tail
+        if ($size -ne "${w}x${h}") { throw "Tailboard size mismatch: $tail ($size)" }
+
+        $fgw=[Math]::Min($w,[int][Math]::Round($h*$sw/$sh/2,0)*2)
+        $fgh=[int][Math]::Round($fgw*$sh/$sw/2,0)*2
+        if($fgh -gt $h){$fgh=$h;$fgw=[int][Math]::Round($fgh*$sw/$sh/2,0)*2}
+        $x=[int][Math]::Floor(($w-$fgw)/2);$y=[int][Math]::Floor(($h-$fgh)/2)
+        $logoW=if($w -eq 1080 -and $h -eq 1920){<PROJECT_NUMBER>}else{<PROJECT_NUMBER>}
+        $logoW=[Math]::Min($logoW,$fgw)
+        $logoX=$x+[Math]::Max(8,[int][Math]::Round($fgw*.<PROJECT_NUMBER>))
+        $logoY=$y+[Math]::Max(8,[int][Math]::Round($fgh*.<PROJECT_NUMBER>))
+        $fc='<PROJECT_VALUE>'
+        $name='<PROJECT_VALUE>'
+        $dest=Join-Path $langDir $name
+        $flat=Join-Path $outRoot $name
+        if((Test-Path -LiteralPath $dest) -or (Test-Path -LiteralPath $flat)){throw "Output already exists; refusing overwrite: $name"}
+        $tmp="$dest.partial.mp4"
+        & $ffmpeg -y -hide_banner -loglevel error -i $src -i $tail -loop 1 -i $cfg.Logo -filter_complex $fc -map '[v]' -map '[a]' -c:v libx264 -preset veryfast -crf <PROJECT_NUMBER> -pix_fmt yuv420p -c:a aac -b:a 192k -movflags +faststart -shortest $tmp
+        if($LASTEXITCODE -ne 0 -or !(Test-Path -LiteralPath $tmp -PathType Leaf)){throw "Render failed: $name"}
+        $actual=& $ffprobe -v error -select_streams v:0 -show_entries stream=width,height,avg_frame_rate -of csv=s=x:p=0 $tmp
+        if($actual -notmatch "^${w}x${h}x30/1$"){throw "Unexpected output specs for $name : $actual"}
+        $audio=@(& $ffprobe -v error -select_streams a:0 -show_entries stream=codec_type -of csv=p=0 $tmp)
+        if($audio -notcontains 'audio'){throw "Audio missing: $name"}
+        Move-Item -LiteralPath $tmp -Destination $dest
+        Copy-Item -LiteralPath $dest -Destination $flat
+        if((Get-FileHash -Algorithm SHA256 -LiteralPath $dest).Hash -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $flat).Hash){throw "Flat copy mismatch: $name"}
+        $done++
+        Write-Output "[$done/$total] $name (${w}x${h}, logo ${logoW}px)"
+    }
+}
+if($done -ne $total){throw "Rendered $done of $total"}
+Write-Output 'COMPLETE: <PROJECT_NUMBER> categorized outputs and <PROJECT_NUMBER> flat copies verified.'

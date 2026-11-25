@@ -1,0 +1,47 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+from pathlib import Path
+import subprocess,json
+ROOT=Path('<PROJECT_VALUE>')
+TAIL=Path('<PROJECT_VALUE>')
+LANG={'PROJECT_LANGUAGE':'<PROJECT_VALUE>','PROJECT_LANGUAGE':'<PROJECT_VALUE>','PROJECT_LANGUAGE':'<PROJECT_VALUE>'}
+FRAME_ROOT=Path('<PROJECT_VALUE>')
+FRAMES={'PROJECT_LANGUAGE':{PROJECT_NUMBER:'<PROJECT_VALUE>',PROJECT_NUMBER:'<PROJECT_VALUE>'},'PROJECT_LANGUAGE':{PROJECT_NUMBER:'<PROJECT_VALUE>',PROJECT_NUMBER:'<PROJECT_VALUE>'},'PROJECT_LANGUAGE':{PROJECT_NUMBER:'<PROJECT_VALUE>',PROJECT_NUMBER:'<PROJECT_VALUE>'}}
+CUT=PROJECT_NUMBER/PROJECT_NUMBER
+def probe(p):return json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-show_format','-of','json',str(p)],encoding='utf-8'))
+def main():
+ jobs=[]
+ for lang,td in LANG.items():
+  for code in ('<PROJECT_VALUE>','<PROJECT_VALUE>'):
+   src=[p for p in ROOT.glob('*.mp4') if p.name.startswith(f'{lang}=OB=UA={code}=') and ('PROJECT_SIZE' in p.name or '1080×1920' in p.name)]
+   if len(src)!=1:raise RuntimeError(f'Ambiguous source {lang} {code}')
+   for h in (PROJECT_NUMBER,PROJECT_NUMBER):
+    name=src[0].name.replace('1080×1920',f'1080x{h}').replace('PROJECT_SIZE',f'1080x{h}')
+    out=ROOT/name;tail=TAIL/td/'<PROJECT_VALUE>'
+    if out.exists() or not tail.exists():raise RuntimeError(f'Output exists or tail missing: {out}')
+    frame=FRAME_ROOT/FRAMES[lang][h]
+    if not frame.is_file():raise FileNotFoundError(frame)
+    jobs.append((src[0],tail,out,h,frame))
+ for src,tail,out,h,frame in jobs:
+
+
+  slot='scale=<PROJECT_GEOMETRY>:flags=lanczos,format=rgba' if h==PROJECT_NUMBER else 'scale=<PROJECT_GEOMETRY>:flags=lanczos,format=rgba,pad=<PROJECT_GEOMETRY>,fillborders=left=4:right=5:mode=smear'
+  x=PROJECT_NUMBER if h==PROJECT_NUMBER else PROJECT_NUMBER
+  fc=(f'[0:v]trim=end_frame=961,setpts=PTS-STARTPTS,{slot}[fg];'
+      f'[2:v]format=rgba,setpts=PTS-STARTPTS[frame];'
+      f'[frame][fg]overlay={x}:0:eof_action=pass:repeatlast=<PROJECT_VALUE>:format=rgb[body];'
+      f'[1:v]fps=<PROJECT_VALUE>,scale=1080:{h},setsar=1,format=rgba,setpts=PTS-STARTPTS+{CUT}/TB[tail];'
+      '<PROJECT_VALUE>')
+  print('RENDER',out.name,flush=True)
+  subprocess.run(['ffmpeg','-nostdin','-n','-v','error','-threads','2','-i',str(src),'-threads','1','-i',str(tail),'-loop','1','-framerate','30','-i',str(frame),'-filter_complex_threads','2','-filter_complex',fc,'-map','[v]','-map','0:a:0','-frames:v','1055','-t',str(PROJECT_NUMBER/PROJECT_NUMBER),'-c:v','libx264','-threads','2','-preset','fast','-crf','18','-pix_fmt','<PROJECT_VALUE>','-c:a','copy','-movflags','+faststart',str(out)],check=True)
+  q=probe(out);v=next(s for s in q['streams'] if s['codec_type']=='video')
+  if (v['width'],v['height'])!=(PROJECT_NUMBER,h) or int(v['nb_frames'])!=PROJECT_NUMBER:raise RuntimeError(f'Invalid video {out}')
+  result=subprocess.run(['ffmpeg','-v','error','-threads','1','-i',str(out),'-f','null','NUL'],capture_output=True)
+  if result.returncode or result.stderr:raise RuntimeError(f'Decode failed {out}: {result.stderr}')
+  print('PASS',out.name,flush=True)
+ print('COMPLETE',len(jobs),flush=True)
+if __name__=='__main__':main()

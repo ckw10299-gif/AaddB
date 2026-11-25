@@ -1,0 +1,155 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import concurrent.futures as cf
+import json, re, sys, subprocess as sp, os, shutil
+from pathlib import Path
+from asset_local_en_sample import BASE, SRC, stamp
+
+OUT=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+SAMPLE=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+WORK=Path('work').resolve()
+SIZES=PROJECT_INPUT['SIZES']
+PACK=PROJECT_INPUT['PACK']
+
+CAPTIONS=PROJECT_INPUT['CAPTIONS']
+
+def run(args,**kw): return sp.run(list(map(str,args)),check=True,**kw)
+def ff(*args,**kw): return run(['ffmpeg','-nostdin','-hide_banner','-v','error','-n',*args],**kw)
+def probe(p): return json.loads(run(['ffprobe','-v','error','-show_streams','-show_format','-of','json',p],capture_output=True,text=True).stdout)
+def silence(p,threshold=-PROJECT_NUMBER,duration=PROJECT_NUMBER):
+    s=run(['ffmpeg','-hide_banner','-i',p,'-af',f'silencedetect=n={threshold}dB:d={duration}','-f','null','NUL'],capture_output=True,text=True,encoding='utf-8',errors='replace').stderr
+    pairs=list(zip(map(float,re.findall(r'silence_start: ([0-9.]+)',s)),map(float,re.findall(r'silence_end: ([0-9.]+)',s))))
+    return pairs
+def sparse_audio(lang, voice):
+    vo=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+    if lang=='PROJECT_LANGUAGE':
+        if not voice.exists():
+            import shutil
+            shutil.copyfile(SAMPLE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>',voice)
+        return PROJECT_NUMBER,[(PROJECT_NUMBER,PROJECT_NUMBER)],PROJECT_NUMBER
+    length=float(probe(vo)['format']['duration'])
+    sil=silence(vo)
+    last=next((a for a,b in reversed(sil) if abs(b-length)<PROJECT_NUMBER),length)
+    cuts=[]
+    if lang=='PROJECT_LANGUAGE':
+        for a,b in sil:
+            if b-a>PROJECT_NUMBER and b<last and a>PROJECT_NUMBER:
+
+                cuts.append((a+PROJECT_NUMBER,b-PROJECT_NUMBER))
+    def graph(tempo):
+        if not cuts:return f'[0:a]atempo={tempo:.8f}[ret]'
+        intervals=list(zip([PROJECT_NUMBER]+[b for a,b in cuts],[a for a,b in cuts]+[length]))
+        n=len(intervals)
+        return f'[0:a]asplit={n}'+''.join(f'[s{i}]' for i in range(n))+';'+ ';'.join(f'[s{i}]atrim=start={a}:end={b},asetpts=PTS-STARTPTS[p{i}]' for i,(a,b) in enumerate(intervals))+';'+''.join(f'[p{i}]' for i in range(n))+f'concat=n={n}:v=0:a=1,atempo={tempo:.8f}[ret]'
+    compact_last=last-sum(b-a for a,b in cuts)
+    tempo=PROJECT_INPUT['tempo']
+    if not voice.exists(): ff('-i',vo,'-filter_complex',graph(tempo).replace('[ret]',',volume=<PROJECT_VALUE>dB[ret]'),'-map','[ret]','-ar','48000','-c:a','pcm_s24le',voice)
+    actual=float(probe(voice)['format']['duration'])
+    aligned_end=next((a for a,b in reversed(silence(voice)) if abs(b-actual)<PROJECT_NUMBER),actual)
+    assert PROJECT_NUMBER<=aligned_end<=PROJECT_NUMBER,(lang,aligned_end,tempo,last)
+    return tempo,cuts,aligned_end
+
+def send_cues(lang,voice):
+    tempo,cuts,last=sparse_audio(lang,voice)
+    if lang=='PROJECT_LANGUAGE':
+        s=(SAMPLE/'<PROJECT_VALUE>'/'PROJECT_LANGUAGE.srt').read_text(encoding='utf-8-sig')
+        def parse(t):
+            h,m,sec=t.replace(',','.').split(':')
+            return int(h)*PROJECT_NUMBER+int(m)*PROJECT_NUMBER+float(sec)
+        cues=[(parse(lines[1].split()[0]),parse(lines[1].split()[2]),lines[2]) for lines in [block.splitlines() for block in s.strip().split('\n\n')]]
+    else:
+        def transform(t):return (t-sum(max(0,min(t,b)-a) for a,b in cuts))/tempo
+        cues=[(max(0,transform(a)-PROJECT_NUMBER),min(last,transform(b)+PROJECT_NUMBER),line) for a,b,line in CAPTIONS[lang]]
+        cues=[(a,min(b,cues[i+1][0]-PROJECT_NUMBER) if i+1<len(cues) else last,t) for i,(a,b,t) in enumerate(cues)]
+    assert all(b-a>=PROJECT_NUMBER and '\n' not in t for a,b,t in cues),(lang,cues)
+    (OUT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>').write_text(''.join(f'{i}\n{stamp(a)} --> {stamp(b)}\n{t}\n\n' for i,(a,b,t) in enumerate(cues,1)),encoding='utf-8-sig')
+    print('VOICE',lang,'tempo',round(tempo,4),'end',round(last,3),'gap',round(PROJECT_NUMBER-last,3),flush=True)
+    return cues
+
+def job(lang,size,cues,voice):
+    stem,tail_lang,files=PACK[lang]
+    w,h=map(int,size.split('x'))
+    ix=SIZES.index(size)
+    card=BASE/'<PROJECT_VALUE>'/stem/(files[ix]+'.png')
+    tail=BASE/'<PROJECT_VALUE>'/tail_lang/'<PROJECT_VALUE>'
+    assert card.is_file() and tail.is_file(), (lang,size,card,tail)
+    ts=probe(tail)['streams']
+    assert (ts[0]['width'],ts[0]['height'])==(w,h) and any(s['codec_type']=='audio' for s in ts),(tail,ts)
+
+    if ix==0:
+
+
+        y="if(lt(n,44),140,if(lt(n,93),90+2.8*(n-44),if(lt(n,224),258,if(lt(n,306),236,if(lt(n,430),194,if(lt(n,639),296,310))))))"
+        layout=f"crop=<PROJECT_GEOMETRY>:'{y}',scale=<PROJECT_GEOMETRY>:flags=lanczos"
+        x,y0=0,PROJECT_NUMBER
+        y_sub=PROJECT_INPUT['y_sub']
+    else:
+        x,y0,fgw,fgh=[None,(PROJECT_NUMBER,0,PROJECT_NUMBER,PROJECT_NUMBER),(PROJECT_NUMBER,0,PROJECT_NUMBER,PROJECT_NUMBER),(PROJECT_NUMBER,0,PROJECT_NUMBER,PROJECT_NUMBER)][ix]
+        layout=f'scale={fgw}:{fgh}:flags=lanczos'
+        y_sub=(PROJECT_INPUT['y_sub'])
+    x_sub=PROJECT_INPUT['x_sub']
+    path=WORK/f'asset_full_{lang}_{size}.ass'
+    font=PROJECT_INPUT['font']
+    fs=PROJECT_INPUT['fs']
+
+    def styled(t):
+        t=t if lang=='PROJECT_LANGUAGE' else t.replace('<PROJECT_VALUE>','<PROJECT_VALUE>')
+        if lang=='PROJECT_LANGUAGE' and ix in (1,2) and len(t)>PROJECT_NUMBER:t=r'{\fscx94}'+t
+        return r'{\an2\pos('+str(x_sub)+','+str(y_sub)+')}' + t
+    path.write_text(f'''[Script Info]
+ScriptType: v4.00+
+PlayResX: {w}
+PlayResY: {h}
+WrapStyle: 2
+ScaledBorderAndShadow: yes
+[V4+ Styles]
+Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
+Style: Default,<PROJECT_STYLE_FIELDS>
+[Events]
+Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text
+'''+''.join(f'Dialogue: 0,{stamp(a,True)},{stamp(b,True)},Default,,0,0,0,,{styled(line)}\n' for a,b,line in cues),encoding='utf-8-sig')
+
+
+    gain=PROJECT_INPUT['gain']
+    fc=(f'[0:v]fps=<PROJECT_VALUE>,{layout},setsar=1,format=rgb24[fg];'
+        f'[fg]pad={w}:{h}:{x}:{y0}:color=black[canvas];'
+        '<PROJECT_VALUE>'
+        '<PROJECT_VALUE>'
+        '[body][tail]concat=n=2:v=1:a=0[v];'
+        '[0:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=<PROJECT_VALUE>dB,apad,atrim=duration=<PROJECT_VALUE>[bed];'
+        f'[1:a]aformat=sample_rates=48000:channel_layouts=stereo,highpass=f=85,equalizer=f=250:t=o:w=1.4:g=<PROJECT_VALUE>,equalizer=f=3000:t=o:w=1.5:g=<PROJECT_VALUE>,volume={gain}dB,apad,atrim=duration=<PROJECT_VALUE>[voice];'
+        '[bed][voice]amix=inputs=2:normalize=0,volume=<PROJECT_VALUE>dB,alimiter=limit=<PROJECT_VALUE>:level=0:latency=1,atrim=duration=<PROJECT_VALUE>,afade=t=out:st=<PROJECT_VALUE>:d=0.07[mix];'
+        '[2:a]aformat=sample_rates=48000:channel_layouts=stereo,alimiter=limit=<PROJECT_VALUE>:level=0:latency=1,afade=t=in:d=0.06[cta];'
+        '[mix][cta]concat=n=2:v=0:a=1[a]')
+    dest=OUT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+    revision=os.environ.get('asset_VERTICAL_FINAL')=='1'
+    tmp=WORK/f'asset_tmp_{lang}_{size}{"_reframed" if revision else ""}.mp4'
+    if not dest.exists() or revision:
+        render_info=('ffprobe','-v','error','-show_entries','stream=codec_name,width,height,r_frame_rate','-of','json')
+        ff('-threads',2,'-i',SRC,'-i',voice,'-threads',1,'-i',tail,'-threads',1,'-i',card,'-filter_complex_threads',2,'-filter_complex',fc,'-map','[v]','-map','[a]','-c:v','libx264','-threads',3,'-preset','fast','-crf',PROJECT_NUMBER,'-pix_fmt','<PROJECT_VALUE>','-c:a','aac','-b:a','320k','-movflags','+faststart',tmp)
+        run([*render_info,tmp],capture_output=True)
+        new_path=dest.with_suffix('.validated.part')
+        with tmp.open('rb') as inp, new_path.open('xb') as out:
+            shutil.copyfileobj(inp,out)
+        if dest.exists():
+            backup=WORK/'asset_pack_first_vertical'/dest.name
+            backup.parent.mkdir(exist_ok=True)
+            with dest.open('rb') as inp, backup.open('xb') as out: shutil.copyfileobj(inp,out)
+        new_path.replace(dest)
+    print('DONE',lang,size,card.name,tail.name,flush=True)
+
+if __name__=='__main__':
+    for sub in ['<PROJECT_VALUE>','<PROJECT_VALUE>','<PROJECT_VALUE>']:(OUT/sub).mkdir(parents=True,exist_ok=True)
+    pending=[]
+    for lang in PACK:
+        if len(sys.argv)>1 and lang not in sys.argv[1:]:continue
+        voice=OUT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+        cues=send_cues(lang,voice)
+        pending.extend((lang,size,cues,voice) for size in SIZES if os.environ.get('asset_VERTICAL_FINAL')!='1' or size=='PROJECT_SIZE')
+    with cf.ThreadPoolExecutor(max_workers=3) as ex:
+        jobs=[ex.submit(job,*args) for args in pending]
+        for fut in cf.as_completed(jobs):fut.result()

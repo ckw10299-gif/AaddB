@@ -1,0 +1,68 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+from pathlib import Path
+import concurrent.futures as cf
+import json, re, subprocess as sp
+from PIL import Image, ImageDraw, ImageChops, ImageStat
+from asset_local_full import OUT, PACK, SIZES, BASE, WORK, probe, run, silence
+
+def frame(path, time, width, height, filters=''):
+    res=run(['ffmpeg','-hide_banner','-v','error','-ss',time,'-i',path,'-vf',f'{filters}scale={width}:{height}:flags=area','-frames:v',1,'-pix_fmt','rgb24','-f','rawvideo','pipe:1'],capture_output=True)
+    return Image.frombytes('RGB',(width,height),res.stdout)
+
+def verify(lang,size):
+    p=OUT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+    w,h=map(int,size.split('x'))
+    found=probe(p)
+    vid,aud=found['streams']
+    assert (vid['codec_name'],vid['width'],vid['height'],vid['r_frame_rate'],aud['codec_name'],aud['channels'])==('h264',w,h,'30/1','aac',2),p
+    run(['ffmpeg','-v','error','-xerror','-threads',3,'-i',p,'-f','null','NUL'],capture_output=True)
+    tail=BASE/'<PROJECT_VALUE>'/PACK[lang][1]/'<PROJECT_VALUE>'
+    assert abs(float(vid['duration'])-PROJECT_NUMBER-float(probe(tail)['streams'][0]['duration']))<PROJECT_NUMBER,p
+    a=frame(p,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER)
+    a0=frame(tail,0,PROJECT_NUMBER,PROJECT_NUMBER)
+    b=frame(p,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER)
+    b0=frame(tail,PROJECT_NUMBER,PROJECT_NUMBER,PROJECT_NUMBER)
+    dist=[round(sum(ImageStat.Stat(ImageChops.difference(x,y)).mean)/3,3) for x,y in [(a,a0),(b,b0)]]
+    assert max(dist)<6,(p,dist)
+    cmd=['ffmpeg','-hide_banner','-i',p,'-vn','-af','ebur128=peak=true','-f','null','NUL']
+    r=run(cmd,capture_output=True,text=True,encoding='utf-8',errors='replace').stderr.rsplit('Summary:',1)[-1]
+    lufs,pk=[float(re.search(rx,r)[1]) for rx in ('<PROJECT_VALUE>','<PROJECT_VALUE>')]
+    assert pk<0 and -PROJECT_NUMBER<lufs<-7,(p,lufs,pk)
+    ass=f'work/asset_full_{lang}_{size}.ass'
+    pattern=r'pts_time:([\d.]+) x1:(\d+) x2:(\d+) y1:(\d+) y2:(\d+) w:(\d+) h:(\d+)'
+
+    r=run(['ffmpeg','-hide_banner','-loglevel','verbose','-f','lavfi','-i',f'color=black:s={size}:r=10:d=25.5','-vf',f'ass={ass},bbox=min_val=200','-f','null','NUL'],capture_output=True,text=True,encoding='utf-8',errors='replace').stderr
+    assert 'failed to find any fallback' not in r.lower(),(lang,size)
+    bbox=[tuple(map(int,m.groups()[1:])) for m in re.finditer(pattern,r)]
+    assert bbox and all(8<x1<=x2<w-9 and 0<y1<=y2<h and height<PROJECT_NUMBER for x1,x2,y1,y2,width,height in bbox),(lang,size)
+    voice=OUT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+    total=float(probe(voice)['format']['duration'])
+    last=next((a for a,b in reversed(silence(voice)) if abs(b-total)<PROJECT_NUMBER),total)
+    assert PROJECT_NUMBER<=PROJECT_NUMBER-last<=PROJECT_NUMBER,(lang,last)
+    width=PROJECT_NUMBER if w<=h else PROJECT_NUMBER
+    height=round(width*h/w)
+    previews=[frame(p,t,width,height) for t in [PROJECT_NUMBER,PROJECT_NUMBER]]
+    return dict(lang=lang,size=size,names=p.name,voice_gap=round(PROJECT_NUMBER-last,3),lufs=lufs,true_peak=pk,tail_frame_difference=dist,encoding='H.264/AAC (2ch) 30fps',caption_min_edge=min(min(q[0],w-1-q[1]) for q in bbox),duration=vid['duration']),previews
+
+if __name__=='__main__':
+    ids=[(lang,size) for lang in PACK for size in SIZES]
+    assert {p.name for p in (OUT/'<PROJECT_VALUE>').glob('*.mp4')}=={'<PROJECT_VALUE>' for l,s in ids}
+    assert len(list((OUT/'<PROJECT_VALUE>').glob('*.srt')))==len(list((OUT/'<PROJECT_VALUE>').glob('*.wav')))==4
+    with cf.ThreadPoolExecutor(max_workers=4) as ex: rows=list(ex.map(lambda job:verify(*job),ids))
+    for idx,stage in enumerate(['body','tails']):
+        sheet=Image.new('RGB',(PROJECT_NUMBER,PROJECT_NUMBER),'#252525')
+        d=ImageDraw.Draw(sheet)
+        for i,(row,frames) in enumerate(rows):
+            im=frames[idx]
+            x=i%4*PROJECT_NUMBER; y=i//4*PROJECT_NUMBER
+            sheet.paste(im,(x+(PROJECT_NUMBER-im.width)//2,y+5))
+            d.text((x+PROJECT_NUMBER,y+PROJECT_NUMBER),f'{row["lang"]}  {row["size"]}',fill='white')
+        sheet.save(WORK/f'asset_local_qc_{stage}.jpg',quality=PROJECT_NUMBER)
+    s='\n'.join('<PROJECT_VALUE>' for r,_ in rows)
+    (OUT/'<PROJECT_VALUE>').write_text('<PROJECT_VALUE>'+s+'\n',encoding='utf-8-sig')
+    print(json.dumps([r for r,_ in rows],ensure_ascii=False),flush=True)

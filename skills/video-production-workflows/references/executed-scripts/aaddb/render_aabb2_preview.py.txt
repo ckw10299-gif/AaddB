@@ -1,0 +1,73 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+import argparse
+import json
+import subprocess
+from pathlib import Path
+
+
+def probe(path):
+    data = json.loads(subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height", "-of", "json", str(path)],
+        check=True, capture_output=True, text=True, encoding="utf-8",
+    ).stdout)
+    video = next(s for s in data["streams"] if s.get("codec_type") == "video")
+    return float(data["format"]["duration"]), int(video["width"]), int(video["height"]), any(s.get("codec_type") == "audio" for s in data["streams"])
+
+
+def render(a, b, c, output, b_visual_end, b_audio_end):
+    w, h = PROJECT_NUMBER, PROJECT_NUMBER
+    adur, _, _, _ = probe(a)
+    bdur, _, _, _ = probe(b)
+    cdur, cw, ch, _ = probe(c)
+    assert (cw, ch) == (w, h), f"Tailboard dimensions {cw}x{ch} != {w}x{h}"
+    transition = PROJECT_NUMBER
+    a_start = adur - transition
+    c_start = a_start + b_visual_end - transition
+    total = adur + b_visual_end + cdur - 2 * transition
+    inputs = ["-i", str(a), "-i", str(b), "-i", str(c)]
+    fc = [
+        f"[0:v]scale={w}:{h}:flags=lanczos,fps=<PROJECT_VALUE>,setsar=1,setpts=PTS-STARTPTS[av]",
+        f"[1:v]trim=0:{b_visual_end:.3f},scale={w}:{h}:flags=lanczos,fps=<PROJECT_VALUE>,setsar=1,setpts=PTS-STARTPTS[bv]",
+        f"[2:v]scale={w}:{h}:flags=lanczos,fps=<PROJECT_VALUE>,setsar=1,setpts=PTS-STARTPTS[cv]",
+        f"[av][bv]xfade=transition=zoomin:duration={transition}:offset={a_start:.3f}[ab]",
+        f"[ab][cv]xfade=transition=zoomin:duration={transition}:offset={c_start:.3f}[abc]",
+        "[abc]split=2[s1][b1]",
+        "[b1]gblur=sigma=<PROJECT_VALUE>[gb1]",
+        '<PROJECT_VALUE>',
+        "[gb1][s1][m1]maskedmerge[stage1]",
+        "[stage1]split=2[s2][b2]",
+        "[b2]gblur=sigma=<PROJECT_VALUE>[gb2]",
+        '<PROJECT_VALUE>',
+        "[gb2][s2][m2]maskedmerge[v]",
+        f"[0:a]aresample=48000,asetpts=PTS-STARTPTS[aa]",
+        f"[1:a]aresample=48000,atrim=0:{bdur:.3f},asetpts=PTS-STARTPTS,afade=t=in:st=<PROJECT_VALUE>:d={transition},afade=t=out:st={max(0,b_audio_end-transition):.3f}:d={transition},adelay={round(a_start*1000)}|{round(a_start*1000)}[ba]",
+        f"[2:a]aresample=48000,asetpts=PTS-STARTPTS,afade=t=in:st=<PROJECT_VALUE>:d={transition},adelay={round(c_start*1000)}|{round(c_start*1000)}[ca]",
+        "[aa][ba][ca]amix=inputs=3:duration=longest:dropout_transition=0:normalize=0[a]",
+    ]
+    output.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([
+        "ffmpeg", "-y", *inputs, "-filter_complex", ";".join(fc), "-map", "[v]", "-map", "[a]",
+        "-c:v", "libx264", "-preset", "fast", "-crf", "20", "-pix_fmt", '<PROJECT_VALUE>',
+        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(output),
+    ], check=True)
+    print(json.dumps({"output": str(output), "a_duration": adur, "b_source_duration": bdur,
+                      "b_visual_end": b_visual_end, "b_audio_keep_to": b_audio_end,
+                      "tail_duration": cdur, "a_transition_start": a_start,
+                      "b_transition_start": c_start, "output_duration": total}, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    p = argparse.ArgumentParser()
+    p.add_argument("a")
+    p.add_argument("b")
+    p.add_argument("tail")
+    p.add_argument("output")
+    p.add_argument("--b-visual-end", type=float, required=True)
+    p.add_argument("--b-audio-end", type=float, required=True)
+    a = p.parse_args()
+    render(Path(a.a), Path(a.b), Path(a.tail), Path(a.output), a.b_visual_end, a.b_audio_end)

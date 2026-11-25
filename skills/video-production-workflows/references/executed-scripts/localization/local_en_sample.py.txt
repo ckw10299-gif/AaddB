@@ -1,0 +1,69 @@
+HISTORICAL SOURCE TRANSCRIPT — NOT A RUNNABLE FILE
+Executed workflow code recovered from the conversation or workspace.
+Private/job-specific values are replaced with placeholders, not defaults.
+Do not run directly: review configuration, project-specific branches, dependencies,
+and file mutation/overwrite instructions before replay.
+
+from pathlib import Path
+import json, re, subprocess as sp
+
+BASE=Path('<PROJECT_VALUE>')
+OUT=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+SRC=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+VO=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+LINES=PROJECT_INPUT['LINES']
+def ff(*args):
+    sp.run(['ffmpeg','-nostdin','-n','-hide_banner','-v','error',*map(str,args)],check=True)
+def stamp(t,ass=False):
+    x=round(t*(PROJECT_NUMBER if ass else PROJECT_NUMBER)); h,x=divmod(x,PROJECT_NUMBER if ass else PROJECT_NUMBER); m,x=divmod(x,PROJECT_NUMBER if ass else PROJECT_NUMBER); s,x=divmod(x,PROJECT_NUMBER if ass else PROJECT_NUMBER)
+    return f'{h}:{m:02}:{s:02}.{x:02}' if ass else f'{h:02}:{m:02}:{s:02},{x:03}'
+def norm(s):return re.sub('[^a-z]','',s.lower())
+def main():
+    OUT.mkdir(parents=True,exist_ok=True)
+    for n in ['<PROJECT_VALUE>','<PROJECT_VALUE>','<PROJECT_VALUE>']: (OUT/n).mkdir(exist_ok=True)
+    voice=OUT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+    tempo=PROJECT_INPUT['tempo']
+    if not voice.exists(): ff('-i',VO,'-af',f'atempo={tempo},volume=<PROJECT_VALUE>dB','-ar','48000','-c:a','pcm_s24le',voice)
+    res=sp.run(['ffmpeg','-hide_banner','-i',str(voice),'-af','silencedetect=n=-35dB:d=0.012','-f','null','NUL'],capture_output=True,text=True,encoding='utf-8',errors='replace')
+    ends=list(re.finditer(r'silence_start: ([0-9.]+)',res.stderr))
+    last=float(ends[-1][1]); print('VOICE_END',last,'GAP',PROJECT_NUMBER-last,flush=True)
+    if not PROJECT_NUMBER<=PROJECT_NUMBER-last<=PROJECT_NUMBER: raise RuntimeError('Trailing speech gap must be checked')
+    words=json.loads(Path('work/asset_local_en_words.json').read_text())
+    cues=[]; idx=0
+    for line in LINES:
+        lo=PROJECT_INPUT['lo']; acc=''
+        while len(acc)<len(norm(line)):
+            acc+=norm(words[idx][0]); idx+=1
+        assert acc==norm(line),(acc,line)
+        start=max(0,words[lo][1]/tempo-PROJECT_NUMBER)
+        end=min(last,words[idx-1][2]/tempo+PROJECT_NUMBER)
+        cues.append((start,end,line))
+    assert idx==len(words)
+    cues=[(a,min(b,cues[i+1][0]-PROJECT_NUMBER) if i+1<len(cues) else last,t) for i,(a,b,t) in enumerate(cues)]
+    srt=OUT/'<PROJECT_VALUE>'/'PROJECT_LANGUAGE.srt'
+    srt.write_text(''.join(f'{i}\n{stamp(a)} --> {stamp(b)}\n{t}\n\n' for i,(a,b,t) in enumerate(cues,1)),encoding='utf-8-sig')
+    scratch=Path('work').resolve()
+    for w,h in [(PROJECT_NUMBER,PROJECT_NUMBER),(PROJECT_NUMBER,PROJECT_NUMBER)]:
+        ass=scratch/f'asset_en_rounded_v3_{w}x{h}.ass'
+        ass.write_text('<PROJECT_VALUE>'+''.join(f'Dialogue: 0,{stamp(a,True)},{stamp(b,True)},Default,,0,0,0,,{t.replace(chr(10),chr(92)+"N")}\n' for a,b,t in cues),encoding='utf-8-sig')
+        size=f'{w}x{h}'
+        tail=BASE/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+        if w==PROJECT_NUMBER:
+            vf='<PROJECT_VALUE>'
+        else:
+            vf=('[0:v]fps=<PROJECT_VALUE>,split=2[fg0][bg0];'
+                '[fg0]scale=<PROJECT_GEOMETRY>:flags=lanczos,setsar=1[fg];'
+                '[bg0]crop=<PROJECT_GEOMETRY>,scale=<PROJECT_GEOMETRY>,gblur=sigma=<PROJECT_VALUE>,scale=<PROJECT_GEOMETRY>,setsar=1[bg];'
+                '<PROJECT_VALUE>')
+        fc=(vf+f"[layout]ass=filename='work/{ass.name}',setpts=PTS-STARTPTS[body];"
+            '<PROJECT_VALUE>'
+            '[body][tail]concat=n=2:v=1:a=0[v];'
+            '[0:a]aformat=sample_rates=48000:channel_layouts=stereo,volume=<PROJECT_VALUE>dB,apad,atrim=duration=<PROJECT_VALUE>[bed];'
+            '[1:a]aformat=sample_rates=48000:channel_layouts=stereo,highpass=f=85,equalizer=f=250:t=o:w=1.4:g=<PROJECT_VALUE>,equalizer=f=3000:t=o:w=1.5:g=<PROJECT_VALUE>,volume=<PROJECT_VALUE>dB,apad,atrim=duration=<PROJECT_VALUE>[voice];'
+            '[bed][voice]amix=inputs=2:normalize=0,volume=<PROJECT_VALUE>dB,alimiter=limit=<PROJECT_VALUE>:level=0:latency=1,atrim=duration=<PROJECT_VALUE>,afade=t=out:st=<PROJECT_VALUE>:d=0.07[mix];'
+            '[2:a]aformat=sample_rates=48000:channel_layouts=stereo,alimiter=limit=<PROJECT_VALUE>:level=0:latency=1,afade=t=in:d=0.06[cta];'
+            '[mix][cta]concat=n=2:v=0:a=1[a]')
+        out=OUT/'<PROJECT_VALUE>'/'<PROJECT_VALUE>'
+        ff('-threads',2,'-i',SRC,'-i',voice,'-threads',1,'-i',tail,'-filter_complex_threads',2,'-filter_complex',fc,'-map','[v]','-map','[a]','-c:v','libx264','-threads',6,'-preset','fast','-crf',PROJECT_NUMBER,'-pix_fmt','<PROJECT_VALUE>','-c:a','aac','-b:a','320k','-movflags','+faststart',out)
+        print('DONE',out,flush=True)
+if __name__=='__main__':main()
